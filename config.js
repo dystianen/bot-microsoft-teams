@@ -14,5 +14,8 @@ module.exports = {
     password: process.env.PROXY_PASSWORD,
     type: "socks5",
   },
+  telegram: {
+    token: process.env.TELEGRAM_BOT_TOKEN,
+  },
   headless: process.env.HEADLESS === "true",
 };

@@ -128,10 +128,19 @@ class TeamsBot {
   }
 
   async connect() {
-    console.log("[STEP 1] Connecting to browser...");
-    this.browser = await chromium.connectOverCDP(this.wsUrl);
-    const contexts = this.browser.contexts();
-    this.context = contexts.length > 0 ? contexts[0] : await this.browser.newContext();
+    if (this.wsUrl) {
+      console.log("[STEP 1] Connecting to browser via Ads Power...");
+      this.browser = await chromium.connectOverCDP(this.wsUrl);
+      const contexts = this.browser.contexts();
+      this.context = contexts.length > 0 ? contexts[0] : await this.browser.newContext();
+    } else {
+      console.log("[STEP 1] Launching local browser in incognito mode...");
+      this.browser = await chromium.launch({ 
+        headless: config.headless,
+        args: ["--incognito", "--disable-blink-features=AutomationControlled"]
+      });
+      this.context = await this.browser.newContext();
+    }
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
   }
@@ -224,7 +233,56 @@ class TeamsBot {
       await firstRowDisplayName.click();
       
       await this.humanDelay(2000, 3000);
-      console.log("[SUCCESS] Automation finished up to step 8.");
+
+      // 9. terus pilih yang licences dan apps
+      console.log("[STEP 9] Selecting 'Licenses and apps' tab...");
+      const licensesTab = this.page.locator('button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")').first();
+      await this.waitForVisible(licensesTab);
+      await licensesTab.click();
+      await this.waitForSpinnerGone(2000);
+
+      // 10. uncheck office 365 itu
+      console.log("[STEP 10] Unchecking Office 365 license...");
+      // Typical selector for the license checkbox in the list
+      const licenseCheckbox = this.page.locator('input[type="checkbox"][aria-label*="Office 365" i], input[type="checkbox"]:near(:text("Office 365"))').first();
+      
+      // If the above generic search fails, try searching specifically for the label "Office 365"
+      const licenseLabel = this.page.locator('label:has-text("Office 365")').first();
+      
+      try {
+        await this.page.waitForTimeout(2000); // Wait for load
+        const isChecked = await licenseCheckbox.isChecked().catch(() => false);
+        if (isChecked) {
+          console.log("[INFO] License is checked, unchecking...");
+          await licenseCheckbox.uncheck({ force: true });
+        } else {
+          // Alternative check via label click if checkbox locator is tricky
+          console.log("[INFO] Checkbox state unsure, trying label click to ensure unchecked...");
+          await licenseLabel.click().catch(() => {});
+        }
+      } catch (err) {
+        console.warn("[WARN] Checkbox uncheck failed via standard ways, trying JS click on any match...");
+        await this.page.evaluate(() => {
+          const els = [...document.querySelectorAll('input[type="checkbox"]')];
+          const office365 = els.find(el => el.parentElement?.textContent?.includes("Office 365") || el.getAttribute("aria-label")?.includes("Office 365"));
+          if (office365 && office365.checked) office365.click();
+        });
+      }
+
+      await this.humanDelay(1000, 2000);
+
+      // 11. terus saves changes
+      console.log("[STEP 11] Clicking 'Save changes'...");
+      const saveBtn = this.page.locator('button:has-text("Save changes"), button[id*="save" i]').first();
+      await this.waitForVisible(saveBtn);
+      await saveBtn.click();
+      
+      // Wait for completion message
+      console.log("[INFO] Waiting for save completion...");
+      await this.waitForSpinnerGone(3000);
+      await this.humanDelay(3000, 5000); // Final delay to ensure save is processed
+
+      console.log("[SUCCESS] Automation finished successfully.");
       return { success: true };
 
     } catch (error) {

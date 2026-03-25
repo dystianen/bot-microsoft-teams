@@ -1,34 +1,49 @@
-const adsPowerHelper = require("./adspower_helper");
 const TeamsBot = require("./teams_bot");
 
-async function main() {
-  const accountConfig = {
-    microsoftAccount: {
-      email: "miacampbell@capitalhrgroup.onmicrosoft.com",
-      password: "MiaHR424"
-    },
-    // Add other config here as needed
-  };
+async function processSingleAccount(accountConfig, index, total) {
+  console.log(`\n--- Starting Account ${index + 1} of ${total}: ${accountConfig.microsoftAccount.email} ---`);
 
-  let profileId = null;
+  let bot = null;
+  let executionResult = null;
+
   try {
-    console.log("Creating profile...");
-    profileId = await adsPowerHelper.createProfile("TeamsBotProfile");
-    
-    console.log("Starting browser...");
-    const { wsUrl } = await adsPowerHelper.startBrowser(profileId);
-    
-    console.log("Running bot...");
-    const bot = new TeamsBot(wsUrl, accountConfig);
-    await bot.run();
-    
-  } catch (error) {
-    console.error("Main execution failed:", error.message);
+    // If you want to use AdsPower, you'd need to add that logic back here.
+    // For now, we launch a local browser (incognito) as requested.
+    bot = new TeamsBot(null, accountConfig); 
+    const result = await bot.run();
+
+    if (result && result.success) {
+      console.log(`[Account ${index + 1}] Automation finished successfully.`);
+      executionResult = {
+        status: "SUCCESS",
+        log: "Completed successfully",
+      };
+    } else {
+      console.error(`[Account ${index + 1}] Automation failed: ${result?.error || "Unknown error"}`);
+      executionResult = {
+        status: "FAILED",
+        log: result?.error || "Unknown automation error",
+      };
+    }
+  } catch (err) {
+    console.error(`\n[ERROR Account ${index + 1}] failed:`, err.message);
+    executionResult = {
+      status: "FAILED",
+      log: err.message,
+    };
   } finally {
-    // Cleanup if needed
+    if (bot) {
+      try {
+        await bot.cleanup();
+      } catch (e) {
+        console.error(`[Account ${index + 1}] Bot cleanup error:`, e.message);
+      }
+    }
   }
+
+  return executionResult;
 }
 
-if (require.main === module) {
-  main();
-}
+module.exports = {
+  processSingleAccount,
+};
