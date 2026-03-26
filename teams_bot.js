@@ -280,7 +280,197 @@ class TeamsBot {
       // Wait for completion message
       console.log("[INFO] Waiting for save completion...");
       await this.waitForSpinnerGone(3000);
-      await this.humanDelay(3000, 5000); // Final delay to ensure save is processed
+      // 12. New step: buka https://admin.cloud.microsoft/?#/catalog
+      console.log("[STEP 12] Navigating to Marketplace catalog...");
+      await this.page.goto("https://admin.cloud.microsoft/?#/catalog", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      await this.waitForSpinnerGone(3000);
+
+      // Check for error: "You need a billing account owner..."
+      const billingError = this.page.locator('div:has-text("You need a billing account owner or billing account contributor role to buy products")').first();
+      const hasError = await billingError.isVisible({ timeout: 5000 }).catch(() => false);
+
+      if (hasError) {
+        console.warn("[WARN] Billing account role error detected. Stopping here.");
+        return { success: false, error: "Billing account role error" };
+      }
+
+      // Check for 'Selecting a billing account' popup (blue popup in images)
+      const billingAccountPopup = this.page.locator('div:has-text("Selecting a billing account")').first();
+      const popupCloseBtn = this.page.locator('button[aria-label*="Close" i]').first();
+      try {
+        if (await billingAccountPopup.isVisible({ timeout: 5000 })) {
+          console.log("[INFO] 'Selecting a billing account' popup detected, closing...");
+          await popupCloseBtn.click();
+          await this.humanDelay(1000, 2000);
+        }
+      } catch (e) {}
+
+      // 13. Pilih tab all product
+      console.log("[STEP 13] Selecting 'All products' tab...");
+      const allProductsTab = this.page.locator('button[role="tab"]:has-text("All products"), button:has-text("All products")').first();
+      await this.waitForVisible(allProductsTab);
+      await allProductsTab.click();
+      await this.waitForSpinnerGone(2000);
+
+      // 14. Scroll ke bawah pilih yg copilot click details
+      console.log("[STEP 14] Finding 'Microsoft 365 Copilot' and clicking 'Details'...");
+      
+      // Robust locator for the "Details" button of "Microsoft 365 Copilot"
+      const copilotCard = this.page.locator('div[role="group"]:has-text("Microsoft 365 Copilot"), div:has-text("Microsoft 365 Copilot")')
+        .filter({ has: this.page.locator('button:has-text("Details")') })
+        .first();
+      
+      const copilotDetailsBtn = copilotCard.locator('button:has-text("Details")').first();
+      
+      try {
+        await copilotDetailsBtn.scrollIntoViewIfNeeded();
+        await this.waitForVisible(copilotDetailsBtn);
+        await copilotDetailsBtn.click();
+      } catch (err) {
+        console.warn("[WARN] Primary Copilot details button locator failed, trying fallback...");
+        // Fallback: search for any "Details" button that is near "Microsoft 365 Copilot"
+        const fallbackBtn = this.page.locator('button:has-text("Details")').filter({ has: this.page.locator('xpath=../..//div[contains(text(), "Microsoft 365 Copilot")]') }).first();
+        await fallbackBtn.click();
+      }
+
+      // 15. Waiting spinner
+      console.log("[STEP 15] Waiting for spinner after clicking Details...");
+      await this.waitForSpinnerGone(5000);
+
+      // 15.5 Select a plan
+      console.log("[STEP 15.5] Selecting 'Microsoft 365 Copilot' plan...");
+      const planDropdown = this.page.locator('div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"]').first();
+      await this.waitForVisible(planDropdown);
+      
+      try {
+        const tagName = await planDropdown.evaluate(el => el.tagName.toLowerCase());
+        if (tagName === "select") {
+          await planDropdown.selectOption({ label: "Microsoft 365 Copilot" });
+        } else {
+          await planDropdown.click();
+          await this.humanDelay(1000, 1500);
+          const option = this.page.locator(`[role="option"]:has-text("Microsoft 365 Copilot"), button:has-text("Microsoft 365 Copilot")`).last();
+          await option.click();
+        }
+      } catch (err) {
+        console.warn("[WARN] Failed to select plan explicitly, it might be already selected. Continuing...");
+      }
+      await this.waitForSpinnerGone(2000);
+
+      // 16. Select 'Pay monthly'
+      console.log("[STEP 16] Selecting 'Pay monthly' billing frequency...");
+      const payMonthlyRadio = this.page.locator('label:has-text("Pay monthly"), input[type="radio"][aria-label*="Pay monthly" i]').first();
+      await this.waitForVisible(payMonthlyRadio);
+      await payMonthlyRadio.click();
+      await this.waitForSpinnerGone(2000);
+
+      // 17. Menunggu button buy muncul lalu click
+      console.log("[STEP 17] Waiting for 'Buy' button and clicking...");
+      const buyBtn = this.page.locator('button:has-text("Buy")').first();
+      await this.waitForVisible(buyBtn);
+      await buyBtn.click();
+      await this.waitForSpinnerGone(3000);
+
+      // 18. Muncul check box lalu check
+      console.log("[STEP 18] Checking authorization checkbox...");
+      const authCheckbox = this.page.locator('input[type="checkbox"]').first();
+      await this.waitForVisible(authCheckbox);
+      const isAlreadyChecked = await authCheckbox.isChecked().catch(() => false);
+      if (!isAlreadyChecked) {
+        await authCheckbox.check({ force: true });
+      }
+      await this.humanDelay(1000, 2000);
+
+      // 19. Place order
+      console.log("[STEP 19] Clicking 'Place order'...");
+      const placeOrderBtn = this.page.locator('button:has-text("Place order")').first();
+      await this.waitForVisible(placeOrderBtn);
+      await placeOrderBtn.click();
+      
+      // 20. Waiting spinner lagi
+      console.log("[STEP 20] Waiting for spinner after placing order...");
+      await this.waitForSpinnerGone(8000);
+
+      // 21. Buka https://teams.microsoft.com/v2/ di tab baru
+      console.log("[STEP 21] Opening Teams in a new tab...");
+      const teamsPage = await this.context.newPage();
+      await teamsPage.goto("https://teams.microsoft.com/v2/", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      await this.waitForSpinnerGone(); // Note: this waits for spinner in this.page, let's use a helper for teamsPage if needed
+
+      // 22. Menunggu sampe button sign in muncul click
+      console.log("[STEP 22] Waiting for 'Sign in' button in Teams...");
+      const teamsSignInBtn = teamsPage.locator('button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")').first();
+      try {
+        await teamsSignInBtn.waitFor({ state: "visible", timeout: 30000 });
+        await teamsSignInBtn.click();
+        await teamsPage.waitForTimeout(5000);
+      } catch (err) {
+        console.log("[INFO] 'Sign in' button not found or already signed in Teams. Continuing...");
+      }
+
+      // 23. Menunggu start trial muncul lalu click
+      console.log("[STEP 23] Waiting for 'Start trial' button in Teams...");
+      const startTrialBtn = teamsPage.locator('button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial")').first();
+      try {
+        await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
+        await startTrialBtn.click();
+        await teamsPage.waitForTimeout(5000);
+      } catch (err) {
+        console.warn("[WARN] 'Start trial' button not found in Teams. Continuing...");
+      }
+
+      // Close the teams tab after trial
+      await teamsPage.close().catch(() => {});
+
+      // 24. Balik lagi ke admin user (original tab)
+      console.log("[STEP 24] Returning to Admin Center to restore license...");
+      await this.page.bringToFront();
+      
+      // Navigate back to Active Users
+      await this.page.goto("https://admin.microsoft.com/#/users", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      await this.waitForSpinnerGone(3000);
+
+      // 25. Pilih user yang sama lagi (Baris Pertama)
+      console.log("[STEP 25] Re-selecting the first user to restore license...");
+      const finalUserRow = this.page.locator('div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button').first();
+      await this.waitForVisible(finalUserRow);
+      await finalUserRow.click();
+      await this.humanDelay(2000, 3000);
+
+      // 26. Licenses and apps
+      console.log("[STEP 26] Selecting 'Licenses and apps' tab...");
+      const finalLicensesTab = this.page.locator('button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")').first();
+      await this.waitForVisible(finalLicensesTab);
+      await finalLicensesTab.click();
+      await this.waitForSpinnerGone(2000);
+
+      // 27. Cantolin lagi lisensi sebelumnya (Check lagi)
+      console.log("[STEP 27] Re-checking the license (Office 365)...");
+      const finalLicenseCheckbox = this.page.locator('input[type="checkbox"][aria-label*="Office 365" i], input[type="checkbox"]:near(:text("Office 365"))').first();
+      const finalLicenseLabel = this.page.locator('label:has-text("Office 365")').first();
+      
+      try {
+        await this.page.waitForTimeout(2000);
+        const isChecked = await finalLicenseCheckbox.isChecked().catch(() => false);
+        if (!isChecked) {
+          console.log("[INFO] License is unchecked, checking it again...");
+          await finalLicenseCheckbox.check({ force: true });
+        } else {
+          console.log("[INFO] License is already checked.");
+        }
+      } catch (err) {
+        console.warn("[WARN] Failed to re-check license via standard ways, trying label click...");
+        await finalLicenseLabel.click().catch(() => {});
+      }
+
+      await this.humanDelay(1000, 2000);
+
+      // 28. Save changes
+      console.log("[STEP 28] Clicking 'Save changes'...");
+      const finalSaveBtn = this.page.locator('button:has-text("Save changes"), button[id*="save" i]').first();
+      await this.waitForVisible(finalSaveBtn);
+      await finalSaveBtn.click();
+      await this.waitForSpinnerGone(5000);
 
       console.log("[SUCCESS] Automation finished successfully.");
       return { success: true };
