@@ -2,27 +2,37 @@ const TelegramBot = require("node-telegram-bot-api");
 const config = require("./config");
 const { processSingleAccount } = require("./index");
 const connectDB = require("./db");
-const { UserConfig } = require("./models");
+const { SuccessAccount, UserConfig } = require("./models");
 const date = require("date-and-time");
 
+// Wrap in an async function to allow awaiting connection
 async function startBot() {
   try {
+    // Connect to MongoDB
     await connectDB();
+
     const token = config.telegram.token;
+
     if (!token) {
       console.error("Please set TELEGRAM_BOT_TOKEN in .env and restart.");
       process.exit(1);
     }
+
     const bot = new TelegramBot(token, { polling: true });
+
+    // Move the initialization of everything that depends on 'bot' inside
     initializeBotHandlers(bot);
-    console.log("Teams Bot started.");
+
+    console.log("Teams Bot (Playwright Local) started.");
   } catch (err) {
     console.error("Failed to start bot:", err.message);
     process.exit(1);
   }
 }
 
+// Separate handlers to keep it clean
 function initializeBotHandlers(bot) {
+  // Sequential message queue for Telegram
   let _msgQueue = Promise.resolve();
   async function safeSendMessage(chatId, text, options = {}) {
     _msgQueue = _msgQueue.then(async () => {
@@ -36,13 +46,26 @@ function initializeBotHandlers(bot) {
     return _msgQueue;
   }
 
+  function escapeHTML(str) {
+    if (!str) return "";
+    return str
+      .toString()
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  // Memory storage for temporary interactive steps and pending accounts
   const sessions = {};
+
   async function getUserConfig(telegram_id) {
-    let userConf = await UserConfig.findOne({ telegram_id: telegram_id.toString() });
+    let userConf = await UserConfig.findOne({
+      telegram_id: telegram_id.toString(),
+    });
     if (!userConf) {
       userConf = new UserConfig({
         telegram_id: telegram_id.toString(),
-        concurrencyLimit: 1, // default 1 for Teams bot
+        concurrencyLimit: 5, // Default set to 5 for "barengan" launch
       });
       await userConf.save();
     }
@@ -64,72 +87,120 @@ function initializeBotHandlers(bot) {
     const chatId = msg.chat.id;
     await getUserConfig(chatId);
     sessions[chatId] = { accounts: [], step: "IDLE", running: false };
-    bot.sendMessage(chatId, "Welcome to Microsoft Teams Bot! 🤖\n\nAdd accounts as email|password and they will be queued for processing.", mainMenu);
+
+    bot.sendMessage(
+      chatId,
+      "Welcome to Microsoft Teams Bot! 🤖 (Playwright Local)\n\nAdd accounts as email|password and they will be launched concurrently with a 5s stagger.",
+      mainMenu,
+    );
   });
 
   bot.onText(/➕ Add Account/, (msg) => {
     const chatId = msg.chat.id;
     sessions[chatId] = sessions[chatId] || { accounts: [], step: "IDLE" };
     sessions[chatId].step = "WAIT_ACCOUNT";
-    bot.sendMessage(chatId, "Send email|password (one per line):", { parse_mode: "Markdown" });
+    bot.sendMessage(
+      chatId,
+      "Send email|password (one per line):",
+      { parse_mode: "Markdown" },
+    );
   });
 
   bot.onText(/🚀 Generate/, async (msg) => {
     const chatId = msg.chat.id;
     const session = sessions[chatId] || { accounts: [], running: false };
 
-    if (session.running) return bot.sendMessage(chatId, "⚠️ Automation is already running!");
-    if (session.accounts.length === 0) return bot.sendMessage(chatId, "Please add accounts first.");
+    if (session.running) {
+      return bot.sendMessage(chatId, "⚠️ Automation is already running!");
+    }
+
+    if (session.accounts.length === 0) {
+      return bot.sendMessage(
+        chatId,
+        "Please add accounts first.",
+      );
+    }
 
     const userConf = await getUserConfig(chatId);
     session.running = true;
+    sessions[chatId] = session;
 
-    bot.sendMessage(chatId, `🚀 Starting batch for ${session.accounts.length} accounts... (Concurrency: ${userConf.concurrencyLimit})`);
+    bot.sendMessage(
+      chatId,
+      `🚀 Starting batch for ${session.accounts.length} accounts...\n(Launching every 5 seconds, max ${userConf.concurrencyLimit} active windows)`,
+    );
 
     const runQueue = async () => {
       let activeWorkers = 0;
-      const maxWorkers = userConf.concurrencyLimit || 1;
+      const maxWorkers = userConf.concurrencyLimit;
       let globalIdx = 0;
-      let total = session.accounts.length;
+      const originalTotal = session.accounts.length;
       const pendingPromises = new Set();
-      
+
       const processAccount = async (accountData, currentIdx) => {
-        await safeSendMessage(chatId, `⏳ [${currentIdx}/${total}] Processing: ${accountData.email}`);
-        
+        await safeSendMessage(
+          chatId,
+          `⏳ [${currentIdx}/${originalTotal}] Processing: ${escapeHTML(accountData.email)}`,
+        );
+
+        const pairedData = {
+          microsoftAccount: accountData,
+          telegram_id: chatId,
+        };
+
         try {
-          const pairedData = { microsoftAccount: accountData, telegram_id: chatId };
-          const result = await processSingleAccount(pairedData, currentIdx - 1, total);
+          const result = await processSingleAccount(pairedData, currentIdx - 1, originalTotal);
 
           if (result.status === "SUCCESS") {
-            await safeSendMessage(chatId, `✅ <b>Success [${currentIdx}/${total}]</b>\nEmail: <code>${accountData.email}</code>`, { parse_mode: "HTML" });
+            let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
+            message += `Time: <code>${date.format(new Date(), "DD MMM YYYY HH:mm", true)}</code>\n`;
+            message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
+            await safeSendMessage(chatId, message, { parse_mode: "HTML" });
+            
+            const successAcc = new SuccessAccount({
+                email: accountData.email,
+                password: accountData.password,
+                telegram_id: chatId.toString(),
+            });
+            await successAcc.save().catch(e => {});
           } else {
-            await safeSendMessage(chatId, `❌ <b>Failed [${currentIdx}/${total}]</b>\nEmail: <code>${accountData.email}</code>\nLog: ${result.log}`, { parse_mode: "HTML" });
+            let message = `❌ <b>Failed [${currentIdx}/${originalTotal}] for ${escapeHTML(accountData.email)}</b>\n`;
+            message += `Log: ${escapeHTML(result.log || "Unknown error")}`;
+            await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           }
         } catch (err) {
-          await safeSendMessage(chatId, `❌ Error: ${err.message}`);
+          await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
         }
       };
 
       try {
         while (true) {
+          // If we can start a new worker (below concurrency limit AND have accounts left)
           if (activeWorkers < maxWorkers && session.accounts.length > 0 && !session.forceStop) {
             const accountData = session.accounts.shift();
             globalIdx++;
             const currentIdx = globalIdx;
 
             activeWorkers++;
+            // Launch in background
             const promise = processAccount(accountData, currentIdx).finally(() => {
               activeWorkers--;
               pendingPromises.delete(promise);
             });
             pendingPromises.add(promise);
 
-            if (session.accounts.length > 0 || activeWorkers < maxWorkers) {
-              await new Promise((r) => setTimeout(r, 10000)); // Stagger launches (10s)
+            // STAGGER: ALWAYS wait 5s after starting each new window, 
+            // unless we've reached the concurrency limit or no accounts left.
+            if (session.accounts.length > 0 && activeWorkers < maxWorkers) {
+              await new Promise((r) => setTimeout(r, 5000));
             }
-          } else if (activeWorkers === 0 && (session.accounts.length === 0 || session.forceStop)) {
+          } 
+          // If the queue is finished or forced to stop, wait for remaining workers to finish then break
+          else if (activeWorkers === 0 && (session.accounts.length === 0 || session.forceStop)) {
             break;
-          } else {
+          } 
+          // If we are at concurrency limit, wait 1s and check again
+          else {
             await new Promise((r) => setTimeout(r, 1000));
           }
         }
@@ -139,7 +210,7 @@ function initializeBotHandlers(bot) {
         }
       } catch (err) {
         console.error("[Queue Error]", err);
-        await safeSendMessage(chatId, `⚠️ Queue error: ${err.message}`);
+        await safeSendMessage(chatId, `⚠️ Queue error: ${escapeHTML(err.message)}`);
       } finally {
         session.running = false;
         if (session.forceStop) {
@@ -166,7 +237,11 @@ function initializeBotHandlers(bot) {
   bot.onText(/🧹 Reset Session/, (msg) => {
     const chatId = msg.chat.id;
     sessions[chatId] = { accounts: [], step: "IDLE", running: false };
-    bot.sendMessage(chatId, "Session cleared.", mainMenu);
+    bot.sendMessage(
+      chatId,
+      "Session cleared.",
+      mainMenu,
+    );
   });
 
   bot.onText(/⚙️ Config/, async (msg) => {
@@ -176,11 +251,23 @@ function initializeBotHandlers(bot) {
     const options = {
       reply_markup: {
         inline_keyboard: [
-          [{ text: `🚀 Concurrency: ${userConf.concurrencyLimit}`, callback_data: `set_concurrency` }]
-        ]
-      }
+          [
+            {
+              text: `🚀 Concurrency: ${userConf.concurrencyLimit}`,
+              callback_data: `set_concurrency`,
+            },
+          ],
+        ],
+      },
     };
-    bot.sendMessage(chatId, `⚙️ <b>Current Configuration:</b>\nConcurrency: ${userConf.concurrencyLimit}`, { parse_mode: "HTML", ...options });
+
+    bot.sendMessage(
+      chatId,
+      `⚙️ <b>Current Configuration:</b>\n\n` +
+      `Concurrency: ${userConf.concurrencyLimit}\n` +
+      `Set this to a higher number (e.g., 5 or 10) to open multiple accounts together.`,
+      { parse_mode: "HTML", ...options },
+    );
   });
 
   bot.on("callback_query", async (callbackQuery) => {
@@ -188,17 +275,25 @@ function initializeBotHandlers(bot) {
     const chatId = message.chat.id;
     const data = callbackQuery.data;
 
-    sessions[chatId] = sessions[chatId] || { accounts: [], step: "IDLE", running: false };
+    sessions[chatId] = sessions[chatId] || {
+      accounts: [],
+      step: "IDLE",
+      running: false,
+    };
 
     if (data === "set_concurrency") {
       sessions[chatId].step = "SET_CONCURRENCY";
-      bot.sendMessage(chatId, "Please send the new concurrency limit (number).");
+      bot.sendMessage(
+        chatId,
+        "How many accounts should run together? (Enter a number, e.g., 5)",
+      );
     }
   });
 
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
+
     if (!text || text.startsWith("/")) return;
     const session = sessions[chatId];
     if (!session || session.step === "IDLE") return;
@@ -211,9 +306,7 @@ function initializeBotHandlers(bot) {
         if (parts.length >= 2) {
           session.accounts.push({
             email: parts[0],
-            password: parts[1],
-            // Filler placeholders as MicrosoftBot might expect them but for Teams bot it might be simplified.
-            // Currently, teams_bot.js only uses email and password (for now).
+            password: parts[parts.length - 1],
           });
           added++;
         }
@@ -221,8 +314,6 @@ function initializeBotHandlers(bot) {
       if (added > 0) {
         bot.sendMessage(chatId, `Successfully added ${added} accounts.`, mainMenu);
         session.step = "IDLE";
-      } else {
-        bot.sendMessage(chatId, "Invalid format. Use email|password");
       }
     } else if (session.step === "SET_CONCURRENCY") {
       const num = parseInt(text);
@@ -230,10 +321,7 @@ function initializeBotHandlers(bot) {
         const userConf = await getUserConfig(chatId);
         userConf.concurrencyLimit = num;
         await userConf.save();
-        bot.sendMessage(chatId, `Concurrency limit updated to ${num}.`, mainMenu);
-        session.step = "IDLE";
-      } else {
-        bot.sendMessage(chatId, "Invalid number. Update cancelled.", mainMenu);
+        bot.sendMessage(chatId, `Concurrency updated to ${num}. Bot will now open up to ${num} windows together with 5s delay.`, mainMenu);
         session.step = "IDLE";
       }
     }

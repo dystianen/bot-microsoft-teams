@@ -446,7 +446,6 @@ class TeamsBot {
       } catch (err) {
         console.warn("[WARN] Failed to select plan explicitly, it might be already selected. Continuing...");
       }
-      await this.waitForSpinnerGone(2000);
 
       // 15.7 Select '1 year' commitment if present
       console.log("[STEP 15.7] Selecting '1 year' commitment...");
@@ -456,7 +455,6 @@ class TeamsBot {
         await oneYearText.waitFor({ state: "visible", timeout: 5000 });
         console.log("[INFO] '1 year' option found, clicking...");
         await oneYearText.click();
-        await this.waitForSpinnerGone(2000);
       } catch (e) {
         console.log("[INFO] '1 year' option not found or already selected, continuing...");
       }
