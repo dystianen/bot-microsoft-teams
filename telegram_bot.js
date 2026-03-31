@@ -54,7 +54,7 @@ function initializeBotHandlers(bot) {
       keyboard: [
         [{ text: "➕ Add Account" }],
         [{ text: "🚀 Generate" }, { text: "🛑 Stop Queue" }],
-        [{ text: "🧹 Reset Session" }],
+        [{ text: "⚙️ Config" }, { text: "🧹 Reset Session" }],
       ],
       resize_keyboard: true,
     },
@@ -87,38 +87,68 @@ function initializeBotHandlers(bot) {
     bot.sendMessage(chatId, `🚀 Starting batch for ${session.accounts.length} accounts... (Concurrency: ${userConf.concurrencyLimit})`);
 
     const runQueue = async () => {
+      let activeWorkers = 0;
+      const maxWorkers = userConf.concurrencyLimit || 1;
       let globalIdx = 0;
       let total = session.accounts.length;
-
-      while (session.accounts.length > 0 && !session.forceStop) {
-        const accountData = session.accounts.shift();
-        globalIdx++;
-
-        await safeSendMessage(chatId, `⏳ [${globalIdx}/${total}] Processing: ${accountData.email}`);
+      const pendingPromises = new Set();
+      
+      const processAccount = async (accountData, currentIdx) => {
+        await safeSendMessage(chatId, `⏳ [${currentIdx}/${total}] Processing: ${accountData.email}`);
         
         try {
-          const pairedData = {
-            microsoftAccount: accountData,
-            telegram_id: chatId,
-          };
-          
-          const result = await processSingleAccount(pairedData, globalIdx - 1, total);
+          const pairedData = { microsoftAccount: accountData, telegram_id: chatId };
+          const result = await processSingleAccount(pairedData, currentIdx - 1, total);
 
           if (result.status === "SUCCESS") {
-            await safeSendMessage(chatId, `✅ <b>Success [${globalIdx}/${total}]</b>\nEmail: <code>${accountData.email}</code>`, { parse_mode: "HTML" });
+            await safeSendMessage(chatId, `✅ <b>Success [${currentIdx}/${total}]</b>\nEmail: <code>${accountData.email}</code>`, { parse_mode: "HTML" });
           } else {
-            await safeSendMessage(chatId, `❌ <b>Failed [${globalIdx}/${total}]</b>\nLog: ${result.log}`, { parse_mode: "HTML" });
+            await safeSendMessage(chatId, `❌ <b>Failed [${currentIdx}/${total}]</b>\nEmail: <code>${accountData.email}</code>\nLog: ${result.log}`, { parse_mode: "HTML" });
           }
         } catch (err) {
           await safeSendMessage(chatId, `❌ Error: ${err.message}`);
         }
+      };
 
-        // Small delay between browsers
-        if (session.accounts.length > 0) await new Promise((r) => setTimeout(r, 5000));
+      try {
+        while (true) {
+          if (activeWorkers < maxWorkers && session.accounts.length > 0 && !session.forceStop) {
+            const accountData = session.accounts.shift();
+            globalIdx++;
+            const currentIdx = globalIdx;
+
+            activeWorkers++;
+            const promise = processAccount(accountData, currentIdx).finally(() => {
+              activeWorkers--;
+              pendingPromises.delete(promise);
+            });
+            pendingPromises.add(promise);
+
+            if (session.accounts.length > 0 || activeWorkers < maxWorkers) {
+              await new Promise((r) => setTimeout(r, 10000)); // Stagger launches (10s)
+            }
+          } else if (activeWorkers === 0 && (session.accounts.length === 0 || session.forceStop)) {
+            break;
+          } else {
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+
+        if (pendingPromises.size > 0) {
+          await Promise.all(Array.from(pendingPromises));
+        }
+      } catch (err) {
+        console.error("[Queue Error]", err);
+        await safeSendMessage(chatId, `⚠️ Queue error: ${err.message}`);
+      } finally {
+        session.running = false;
+        if (session.forceStop) {
+          session.forceStop = false;
+          bot.sendMessage(chatId, "🛑 Queue processing stopped successfully.", mainMenu);
+        } else {
+          bot.sendMessage(chatId, "🏁 Finished processing session accounts.", mainMenu);
+        }
       }
-
-      session.running = false;
-      bot.sendMessage(chatId, "🏁 Finished processing session accounts.", mainMenu);
     };
 
     runQueue();
@@ -137,6 +167,33 @@ function initializeBotHandlers(bot) {
     const chatId = msg.chat.id;
     sessions[chatId] = { accounts: [], step: "IDLE", running: false };
     bot.sendMessage(chatId, "Session cleared.", mainMenu);
+  });
+
+  bot.onText(/⚙️ Config/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userConf = await getUserConfig(chatId);
+
+    const options = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: `🚀 Concurrency: ${userConf.concurrencyLimit}`, callback_data: `set_concurrency` }]
+        ]
+      }
+    };
+    bot.sendMessage(chatId, `⚙️ <b>Current Configuration:</b>\nConcurrency: ${userConf.concurrencyLimit}`, { parse_mode: "HTML", ...options });
+  });
+
+  bot.on("callback_query", async (callbackQuery) => {
+    const message = callbackQuery.message;
+    const chatId = message.chat.id;
+    const data = callbackQuery.data;
+
+    sessions[chatId] = sessions[chatId] || { accounts: [], step: "IDLE", running: false };
+
+    if (data === "set_concurrency") {
+      sessions[chatId].step = "SET_CONCURRENCY";
+      bot.sendMessage(chatId, "Please send the new concurrency limit (number).");
+    }
   });
 
   bot.on("message", async (msg) => {
@@ -166,6 +223,18 @@ function initializeBotHandlers(bot) {
         session.step = "IDLE";
       } else {
         bot.sendMessage(chatId, "Invalid format. Use email|password");
+      }
+    } else if (session.step === "SET_CONCURRENCY") {
+      const num = parseInt(text);
+      if (!isNaN(num) && num > 0) {
+        const userConf = await getUserConfig(chatId);
+        userConf.concurrencyLimit = num;
+        await userConf.save();
+        bot.sendMessage(chatId, `Concurrency limit updated to ${num}.`, mainMenu);
+        session.step = "IDLE";
+      } else {
+        bot.sendMessage(chatId, "Invalid number. Update cancelled.", mainMenu);
+        session.step = "IDLE";
       }
     }
   });

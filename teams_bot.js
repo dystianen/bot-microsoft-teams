@@ -34,11 +34,20 @@ class TeamsBot {
       while (!isDone) {
         await this.page.waitForTimeout(2000).catch(() => { isDone = true; });
         if (isDone) break;
-        // Simplified error check for now, can be expanded like in microsoft_bot.js
+
+        const detectedError = await this.checkForError();
+        if (detectedError) {
+          errorMsg = detectedError;
+          isDone = true;
+          break;
+        }
       }
     };
 
-    const result = await Promise.race([promise, checkLoop()]).finally(() => {
+    const result = await Promise.race([
+      promise, 
+      checkLoop()
+    ]).finally(() => {
       isDone = true;
     });
 
@@ -47,6 +56,43 @@ class TeamsBot {
     }
 
     return result;
+  }
+
+  async checkForError() {
+    try {
+      // 1. Cek pesan error validasi di field
+      const fieldError = this.page.locator('[data-automation-id="error-message"], [id*="error" i]').first();
+      if (await fieldError.isVisible().catch(() => false)) {
+        const msg = (await fieldError.textContent().catch(() => "")).trim();
+        if (msg) return `Field Error: ${msg}`;
+      }
+
+      // 2. Cek teks di SEMUA frame (termasuk iframe tersembunyi)
+      const markers = [
+        "something went wrong",
+        "something happened",
+        "terjadi sesuatu",
+        "Terjadi kesalahan",
+        "Melindungi akun Anda",
+        "try a different way",
+        "Protecting your account",
+        "Please solve the puzzle",
+        "error code",
+        "715-123280",
+      ];
+
+      for (const frame of this.page.frames()) {
+        try {
+          const frameText = await frame.innerText('body').catch(() => "");
+          const lowerFrameText = frameText.toLowerCase();
+          const found = markers.find(m => lowerFrameText.includes(m.toLowerCase()));
+          if (found) {
+            return `Marker "${found}" detected in frame.`;
+          }
+        } catch (e) { /* skip inaccessible frames */ }
+      }
+    } catch (err) { /* ignore */ }
+    return null;
   }
 
   async waitForSpinnerGone(extraDelay = 0) {
@@ -79,46 +125,49 @@ class TeamsBot {
 
   async clickButtonWithPossibleNames(names) {
     await this.waitForSpinnerGone();
-
     const keywords = names.flatMap((n) => n.trim().toLowerCase().split(/\s+/));
     const uniqueKeywords = [...new Set(keywords)];
 
-    const found = await this.page.evaluate((keywords) => {
-      const candidates = [
-        ...document.querySelectorAll('button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]'),
-      ];
+    // 1. Coba klik di Main Page & Semua Frames menggunakan JS
+    for (const frame of this.page.frames()) {
+      try {
+        const found = await frame.evaluate((keywords) => {
+          const candidates = [...document.querySelectorAll('button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]')];
+          const el = candidates.find((b) => {
+            const text = (b.textContent || b.value || b.getAttribute("aria-label") || "").trim().toLowerCase();
+            return text.length > 0 && text.length < 60 && keywords.some((kw) => text.includes(kw));
+          });
+          if (!el) return null;
+          el.click();
+          return el.textContent?.trim() || el.value || "unknown";
+        }, uniqueKeywords);
 
-      const el = candidates.find((b) => {
-        const text = (b.textContent || b.value || b.getAttribute("aria-label") || "").trim().toLowerCase();
-        return text.length > 0 && text.length < 60 && keywords.some((kw) => text.includes(kw));
-      });
-
-      if (!el) return null;
-      el.click();
-      return el.textContent?.trim() || el.value || "unknown";
-    }, uniqueKeywords);
-
-    if (found) {
-      console.log(`[INFO] Clicked: "${found}"`);
-      return true;
+        if (found) {
+          console.log(`[INFO] Clicked: "${found}" (in frame: ${frame.url() === this.page.url() ? "main" : "subframe"})`);
+          return true;
+        }
+      } catch (e) {}
     }
 
-    console.log("[WARN] JS click not found, fallback to Playwright...");
+    // 2. Fallback: Playwright native click di Main Page & Semua Frames
+    console.log(`[INFO] Fallback to Playwright click for names: ${names.join(", ")}`);
     const pattern = new RegExp(names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*")).join("|"), "i");
-    const button = this.page.getByRole("button", { name: pattern }).first();
 
-    try {
-      await button.waitFor({ state: "visible", timeout: HARD_TIMEOUT });
-      await this.randomMouseMove();
-      await this.humanDelay(500, 1000);
-      await button.click({ timeout: 8000, force: true });
-      const clickedText = await button.textContent().catch(() => "unknown");
-      console.log(`[INFO] Clicked: "${clickedText?.trim()}"`);
-      return true;
-    } catch (err) {
-      console.error(`[ERROR] Button not found for keywords:`, uniqueKeywords);
-      throw err;
+    for (const frame of this.page.frames()) {
+      try {
+        const button = frame.getByRole("button", { name: pattern }).first();
+        if (await button.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await this.randomMouseMove();
+          const clickedText = await button.evaluate(el => (el.textContent || el.value || el.getAttribute("aria-label") || "").trim()).catch(() => "unknown");
+          await button.click({ timeout: 5000, force: true });
+          console.log(`[INFO] Clicked: "${clickedText || "unknown"}" (native, in frame)`);
+          return true;
+        }
+      } catch (e) {}
     }
+
+    console.error(`[ERROR] Button not found in any frame for names:`, names);
+    throw new Error(`Button not found: ${names.join(", ")}`);
   }
 
   getGenericLocator(keyword, elementType = "input") {
@@ -184,19 +233,65 @@ class TeamsBot {
       await this.humanDelay(500, 1000);
       await this.clickButtonWithPossibleNames(["Sign in", "Masuk"]);
 
-      // 5. di halaman stay signed in, click yes
-      console.log("[STEP 5] Handling 'Stay signed in'...");
-      await this.clickButtonWithPossibleNames(["Yes", "Ya"]).catch(() => {
-        console.log("[INFO] 'Stay signed in' prompt not found or failed, continuing...");
-      });
+      // 5. Handling after Password (Robust State Monitoring)
+      console.log("[STEP 5] Waiting for Dashboard or login prompts (KMSI/MFA)...");
+      
+      const dashboardMarker = this.page.locator('[data-hint="ReactLeftNav"], #admin-home-container').first();
+      const loginLoopStart = Date.now();
+      
+      while (Date.now() - loginLoopStart < 120000) { // Max 2 menit menunggu dashboard
+        // 5.1 Cek apakah sudah sampai Dashboard?
+        if (await dashboardMarker.isVisible().catch(() => false)) {
+          console.log("[SUCCESS] Dashboard detected!");
+          break;
+        }
+
+        // 5.2 Cek rintangan: Stay signed in
+        const yesBtn = this.page.locator('button:has-text("Yes"), input[value="Yes"], #idSIButton9').first();
+        if (await yesBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] Handling 'Stay signed in'...");
+          await yesBtn.click();
+          await this.humanDelay(2000, 3000);
+          continue;
+        }
+
+        // 5.3 Cek rintangan: MFA Skip
+        const skipBtn = this.page.locator('a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton').first();
+        if (await skipBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] Handling MFA 'Skip for now'...");
+          await skipBtn.click();
+          await this.humanDelay(2000, 3000);
+          continue;
+        }
+
+        // 5.4 Cek rintangan: Choose Account / Use Password
+        const usePass = this.page.locator('text=Use my password, text=Gunakan kata sandi saya, #allowInterrupt').first();
+        if (await usePass.isVisible().catch(() => false)) {
+          console.log("[INFO] Handling 'Use my password' prompt...");
+          await usePass.click();
+          await this.humanDelay(2000, 3000);
+          continue;
+        }
+
+        // 5.5 Cek Error Page
+        const err = await this.checkForError();
+        if (err) throw new Error(err);
+
+        await this.page.waitForTimeout(2500); // Tunggu antar scan
+      }
+
+      // Verifikasi akhir sebelum lanjut ke Step 6
+      if (!(await dashboardMarker.isVisible().catch(() => false))) {
+        throw new Error("Login failed: Dashboard not reached within 2 minutes.");
+      }
 
       // 6. select menu users (collapse dia)
       console.log("[STEP 6] Selecting 'Users' menu...");
       
-      // Wait for the side navigation to be present and stable
+      await this.waitForSpinnerGone(1000);
       const navLocator = this.page.locator('[data-hint="ReactLeftNav"]').first();
-      await navLocator.waitFor({ state: "visible", timeout: 30000 });
-      await this.humanDelay(2000, 3000); // Give it extra time to settle
+      await this.waitForVisible(navLocator);
+      await this.humanDelay(1000, 2000);
 
       const usersMenu = this.page.locator('button[data-automation-id="LeftNavusersnodeNavToggler"], button[name="Users"], button:has-text("Users")').first();
       await this.waitForVisible(usersMenu);
@@ -217,10 +312,8 @@ class TeamsBot {
       await this.waitForVisible(activeUsersLink);
       await activeUsersLink.click();
       
-      // Wait for the active users page to load
-      console.log("[INFO] Waiting for Active users page to load...");
-      await this.page.waitForLoadState("networkidle").catch(() => {});
-      await this.waitForSpinnerGone(3000);
+      console.log("[INFO] Waiting for Active users list to appear...");
+      await this.waitForSpinnerGone(1000);
 
       // 8. terus click display name yg ada di list (Baris Pertama)
       console.log("[STEP 8] Clicking the first display name from the list...");
@@ -315,12 +408,8 @@ class TeamsBot {
       // 14. Scroll ke bawah pilih yg copilot click details
       console.log("[STEP 14] Finding 'Microsoft 365 Copilot' and clicking 'Details'...");
       
-      // Robust locator for the "Details" button of "Microsoft 365 Copilot"
-      const copilotCard = this.page.locator('div[role="group"]:has-text("Microsoft 365 Copilot"), div:has-text("Microsoft 365 Copilot")')
-        .filter({ has: this.page.locator('button:has-text("Details")') })
-        .first();
-      
-      const copilotDetailsBtn = copilotCard.locator('button:has-text("Details")').first();
+      // Menggunakan data-automation-id persis dari HTML yang dberikan
+      const copilotDetailsBtn = this.page.locator('[data-automation-id="NEW_PRODUCTS-Microsoft 365 Copilot-Tile"] button:has-text("Details"), button[aria-label*="View details for"][aria-label*="Microsoft 365 Copilot"]').first();
       
       try {
         await copilotDetailsBtn.scrollIntoViewIfNeeded();
@@ -328,8 +417,8 @@ class TeamsBot {
         await copilotDetailsBtn.click();
       } catch (err) {
         console.warn("[WARN] Primary Copilot details button locator failed, trying fallback...");
-        // Fallback: search for any "Details" button that is near "Microsoft 365 Copilot"
-        const fallbackBtn = this.page.locator('button:has-text("Details")').filter({ has: this.page.locator('xpath=../..//div[contains(text(), "Microsoft 365 Copilot")]') }).first();
+        const fallbackBtn = this.page.getByRole("heading", { name: "Microsoft 365 Copilot", exact: true })
+          .locator("xpath=ancestor::div[contains(@class, 'offerTile')]//button[contains(., 'Details')]").first();
         await fallbackBtn.click();
       }
 
@@ -349,7 +438,9 @@ class TeamsBot {
         } else {
           await planDropdown.click();
           await this.humanDelay(1000, 1500);
-          const option = this.page.locator(`[role="option"]:has-text("Microsoft 365 Copilot"), button:has-text("Microsoft 365 Copilot")`).last();
+          const option = this.page.getByRole('option', {
+            name: /^Microsoft 365 Copilot$/i
+          });
           await option.click();
         }
       } catch (err) {
@@ -357,12 +448,30 @@ class TeamsBot {
       }
       await this.waitForSpinnerGone(2000);
 
+      // 15.7 Select '1 year' commitment if present
+      console.log("[STEP 15.7] Selecting '1 year' commitment...");
+      try {
+        // Menggunakan exact text agar bisa ngeklik langsung element aslinya tanpa peduli dia itu div, span, label, atau radio asli
+        const oneYearText = this.page.getByText('1 year', { exact: true }).first();
+        await oneYearText.waitFor({ state: "visible", timeout: 5000 });
+        console.log("[INFO] '1 year' option found, clicking...");
+        await oneYearText.click();
+        await this.waitForSpinnerGone(2000);
+      } catch (e) {
+        console.log("[INFO] '1 year' option not found or already selected, continuing...");
+      }
+
       // 16. Select 'Pay monthly'
       console.log("[STEP 16] Selecting 'Pay monthly' billing frequency...");
-      const payMonthlyRadio = this.page.locator('label:has-text("Pay monthly"), input[type="radio"][aria-label*="Pay monthly" i]').first();
-      await this.waitForVisible(payMonthlyRadio);
-      await payMonthlyRadio.click();
-      await this.waitForSpinnerGone(2000);
+      try {
+        const payMonthlyText = this.page.getByText('Pay monthly', { exact: true }).first();
+        await payMonthlyText.waitFor({ state: "visible", timeout: 5000 });
+        console.log("[INFO] 'Pay monthly' option found, clicking...");
+        await payMonthlyText.click();
+        await this.waitForSpinnerGone(2000);
+      } catch (e) {
+        console.log("[INFO] 'Pay monthly' option not found or already selected, continuing...");
+      }
 
       // 17. Menunggu button buy muncul lalu click
       console.log("[STEP 17] Waiting for 'Buy' button and clicking...");
@@ -371,13 +480,23 @@ class TeamsBot {
       await buyBtn.click();
       await this.waitForSpinnerGone(3000);
 
-      // 18. Muncul check box lalu check
-      console.log("[STEP 18] Checking authorization checkbox...");
-      const authCheckbox = this.page.locator('input[type="checkbox"]').first();
-      await this.waitForVisible(authCheckbox);
-      const isAlreadyChecked = await authCheckbox.isChecked().catch(() => false);
-      if (!isAlreadyChecked) {
-        await authCheckbox.check({ force: true });
+      // 18. Muncul check box lalu check (OPTIONAL)
+      console.log("[STEP 18] Checking authorization checkbox if present...");
+      try {
+        const authCheckbox = this.page.locator('input[type="checkbox"]').first();
+        const checkboxFound = await authCheckbox.waitFor({ state: "visible", timeout: 3000 }).then(() => true).catch(() => false);
+        
+        if (checkboxFound) {
+          const isAlreadyChecked = await authCheckbox.isChecked().catch(() => false);
+          if (!isAlreadyChecked) {
+            await authCheckbox.check({ force: true });
+            console.log("[INFO] Authorization checkbox checked.");
+          }
+        } else {
+          console.log("[INFO] No authorization checkbox found, proceeding to place order...");
+        }
+      } catch (err) {
+        console.log("[INFO] Error handling checkbox, skipping...", err.message);
       }
       await this.humanDelay(1000, 2000);
 
