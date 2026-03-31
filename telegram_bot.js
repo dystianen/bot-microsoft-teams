@@ -146,6 +146,7 @@ function initializeBotHandlers(bot) {
         const pairedData = {
           microsoftAccount: accountData,
           telegram_id: chatId,
+          productUrl: userConf.microsoftUrl,
         };
 
         try {
@@ -257,6 +258,16 @@ function initializeBotHandlers(bot) {
               callback_data: `set_concurrency`,
             },
           ],
+          [
+            {
+              text: `📞 Select Microsoft Copilot`,
+              callback_data: `select_copilot`,
+            },
+            {
+              text: `📺 Select Microsoft Teams Room`,
+              callback_data: `select_teams`,
+            },
+          ],
         ],
       },
     };
@@ -264,8 +275,9 @@ function initializeBotHandlers(bot) {
     bot.sendMessage(
       chatId,
       `⚙️ <b>Current Configuration:</b>\n\n` +
-      `Concurrency: ${userConf.concurrencyLimit}\n` +
-      `Set this to a higher number (e.g., 5 or 10) to open multiple accounts together.`,
+      `<b>Concurrency:</b> ${userConf.concurrencyLimit}\n` +
+      `<b>Active URL:</b> <code>${escapeHTML(userConf.microsoftUrl)}</code>\n\n` +
+      `Click buttons below to change settings.`,
       { parse_mode: "HTML", ...options },
     );
   });
@@ -287,6 +299,20 @@ function initializeBotHandlers(bot) {
         chatId,
         "How many accounts should run together? (Enter a number, e.g., 5)",
       );
+    } else if (data === "select_copilot") {
+      const userConf = await getUserConfig(chatId);
+      userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-365-phone-system/CFQ7TTC0LF8S";
+      userConf.updatedAt = new Date();
+      await userConf.save();
+      bot.answerCallbackQuery(callbackQuery.id, { text: "📞 Phone System Selected" });
+      bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft 365 Phone System", { parse_mode: "HTML" });
+    } else if (data === "select_teams") {
+      const userConf = await getUserConfig(chatId);
+      userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
+      userConf.updatedAt = new Date();
+      await userConf.save();
+      bot.answerCallbackQuery(callbackQuery.id, { text: "📺 Teams Room Selected" });
+      bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft Teams Rooms Basic", { parse_mode: "HTML" });
     }
   });
 

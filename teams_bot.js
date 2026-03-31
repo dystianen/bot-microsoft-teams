@@ -197,6 +197,7 @@ class TeamsBot {
   async run() {
     try {
       await this.connect();
+      let uncheckedLicenses = [];
       
       // 2. buka https://admin.microsoft.com/
       console.log("[STEP 2] Opening https://admin.microsoft.com/...");
@@ -315,15 +316,23 @@ class TeamsBot {
       console.log("[INFO] Waiting for Active users list to appear...");
       await this.waitForSpinnerGone(1000);
 
-      // 8. terus click display name yg ada di list (Baris Pertama)
-      console.log("[STEP 8] Clicking the first display name from the list...");
+      // 8. Search account by email in the user list and select
+      const fullEmail = this.accountConfig.microsoftAccount.email;
+      console.log(`[STEP 8] Searching for user: ${fullEmail}...`);
       
-      const firstRowDisplayName = this.page.locator('div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button').first();
-      await this.waitForVisible(firstRowDisplayName);
+      const searchInput = this.page.locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]').first();
+      await this.waitForVisible(searchInput);
+      await searchInput.fill(fullEmail);
+      await this.page.keyboard.press("Enter");
       
-      const name = await firstRowDisplayName.textContent();
-      console.log(`[INFO] Clicking display name: "${name?.trim()}"`);
-      await firstRowDisplayName.click();
+      await this.waitForSpinnerGone(2000);
+      
+      const userRow = this.page.locator('div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button').first();
+      await this.waitForVisible(userRow);
+      
+      const nameFound = await userRow.textContent();
+      console.log(`[INFO] Clicking display name: "${nameFound?.trim()}" (Found after searching for ${fullEmail})`);
+      await userRow.click();
       
       await this.humanDelay(2000, 3000);
 
@@ -334,32 +343,25 @@ class TeamsBot {
       await licensesTab.click();
       await this.waitForSpinnerGone(2000);
 
-      // 10. uncheck office 365 itu
-      console.log("[STEP 10] Unchecking Office 365 license...");
-      // Typical selector for the license checkbox in the list
-      const licenseCheckbox = this.page.locator('input[type="checkbox"][aria-label*="Office 365" i], input[type="checkbox"]:near(:text("Office 365"))').first();
-      
-      // If the above generic search fails, try searching specifically for the label "Office 365"
-      const licenseLabel = this.page.locator('label:has-text("Office 365")').first();
-      
+      // 10. uncheck all checked checkboxes and remember them
+      console.log("[STEP 10] Unchecking all checked checkboxes and remembering them...");
       try {
         await this.page.waitForTimeout(2000); // Wait for load
-        const isChecked = await licenseCheckbox.isChecked().catch(() => false);
-        if (isChecked) {
-          console.log("[INFO] License is checked, unchecking...");
-          await licenseCheckbox.uncheck({ force: true });
-        } else {
-          // Alternative check via label click if checkbox locator is tricky
-          console.log("[INFO] Checkbox state unsure, trying label click to ensure unchecked...");
-          await licenseLabel.click().catch(() => {});
-        }
-      } catch (err) {
-        console.warn("[WARN] Checkbox uncheck failed via standard ways, trying JS click on any match...");
-        await this.page.evaluate(() => {
-          const els = [...document.querySelectorAll('input[type="checkbox"]')];
-          const office365 = els.find(el => el.parentElement?.textContent?.includes("Office 365") || el.getAttribute("aria-label")?.includes("Office 365"));
-          if (office365 && office365.checked) office365.click();
+        uncheckedLicenses = await this.page.evaluate(() => {
+          const checkboxes = [...document.querySelectorAll('input[type="checkbox"]')];
+          const results = [];
+          checkboxes.forEach(cb => {
+            if (cb.checked) {
+              const labelText = (cb.getAttribute('aria-label') || cb.parentElement?.innerText || "").split('\n')[0].trim();
+              if (labelText) results.push(labelText);
+              cb.click();
+            }
+          });
+          return results;
         });
+        console.log(`[INFO] Unchecked and remembered: ${uncheckedLicenses.join(", ") || "None"}`);
+      } catch (err) {
+        console.warn("[WARN] Failed to uncheck and remember checkboxes:", err.message);
       }
 
       await this.humanDelay(1000, 2000);
@@ -373,90 +375,56 @@ class TeamsBot {
       // Wait for completion message
       console.log("[INFO] Waiting for save completion...");
       await this.waitForSpinnerGone(3000);
-      // 12. New step: buka https://admin.cloud.microsoft/?#/catalog
-      console.log("[STEP 12] Navigating to Marketplace catalog...");
-      await this.page.goto("https://admin.cloud.microsoft/?#/catalog", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      // 12. Navigating to product URL from config
+      const catalogUrl = this.accountConfig.productUrl || "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
+      const isTeamsRooms = catalogUrl.includes("microsoft-teams-rooms-basic");
+      const isPhoneSystem = catalogUrl.includes("phone-system");
+      const isCopilot = catalogUrl.includes("copilot");
+      
+      let planName = "Microsoft 365 Copilot"; // Fallback
+      if (isTeamsRooms) planName = "Microsoft Teams Rooms Basic";
+      else if (isPhoneSystem) planName = "Microsoft 365 Phone System";
+
+      console.log(`[STEP 12] Navigating to Marketplace catalog: ${catalogUrl}... (Plan: ${planName})`);
+      await this.page.goto(catalogUrl, { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
       await this.waitForSpinnerGone(3000);
 
-      // Check for error: "You need a billing account owner..."
-      const billingError = this.page.locator('div:has-text("You need a billing account owner or billing account contributor role to buy products")').first();
-      const hasError = await billingError.isVisible({ timeout: 5000 }).catch(() => false);
-
-      if (hasError) {
-        console.warn("[WARN] Billing account role error detected. Stopping here.");
-        return { success: false, error: "Billing account role error" };
-      }
-
-      // Check for 'Selecting a billing account' popup (blue popup in images)
-      const billingAccountPopup = this.page.locator('div:has-text("Selecting a billing account")').first();
-      const popupCloseBtn = this.page.locator('button[aria-label*="Close" i]').first();
-      try {
-        if (await billingAccountPopup.isVisible({ timeout: 5000 })) {
-          console.log("[INFO] 'Selecting a billing account' popup detected, closing...");
-          await popupCloseBtn.click();
-          await this.humanDelay(1000, 2000);
-        }
-      } catch (e) {}
-
-      // 13. Pilih tab all product
-      console.log("[STEP 13] Selecting 'All products' tab...");
-      const allProductsTab = this.page.locator('button[role="tab"]:has-text("All products"), button:has-text("All products")').first();
-      await this.waitForVisible(allProductsTab);
-      await allProductsTab.click();
-      await this.waitForSpinnerGone(2000);
-
-      // 14. Scroll ke bawah pilih yg copilot click details
-      console.log("[STEP 14] Finding 'Microsoft 365 Copilot' and clicking 'Details'...");
-      
-      // Menggunakan data-automation-id persis dari HTML yang dberikan
-      const copilotDetailsBtn = this.page.locator('[data-automation-id="NEW_PRODUCTS-Microsoft 365 Copilot-Tile"] button:has-text("Details"), button[aria-label*="View details for"][aria-label*="Microsoft 365 Copilot"]').first();
-      
-      try {
-        await copilotDetailsBtn.scrollIntoViewIfNeeded();
-        await this.waitForVisible(copilotDetailsBtn);
-        await copilotDetailsBtn.click();
-      } catch (err) {
-        console.warn("[WARN] Primary Copilot details button locator failed, trying fallback...");
-        const fallbackBtn = this.page.getByRole("heading", { name: "Microsoft 365 Copilot", exact: true })
-          .locator("xpath=ancestor::div[contains(@class, 'offerTile')]//button[contains(., 'Details')]").first();
-        await fallbackBtn.click();
-      }
-
-      // 15. Waiting spinner
-      console.log("[STEP 15] Waiting for spinner after clicking Details...");
-      await this.waitForSpinnerGone(5000);
+      // Remaining steps will adapt based on the product defined above.
 
       // 15.5 Select a plan
-      console.log("[STEP 15.5] Selecting 'Microsoft 365 Copilot' plan...");
+      console.log(`[STEP 15.5] Selecting '${planName}' plan...`);
       const planDropdown = this.page.locator('div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"]').first();
       await this.waitForVisible(planDropdown);
       
       try {
         const tagName = await planDropdown.evaluate(el => el.tagName.toLowerCase());
         if (tagName === "select") {
-          await planDropdown.selectOption({ label: "Microsoft 365 Copilot" });
+          await planDropdown.selectOption({ label: planName });
         } else {
           await planDropdown.click();
           await this.humanDelay(1000, 1500);
           const option = this.page.getByRole('option', {
-            name: /^Microsoft 365 Copilot$/i
+            name: new RegExp(`^${planName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i")
           });
           await option.click();
         }
       } catch (err) {
-        console.warn("[WARN] Failed to select plan explicitly, it might be already selected. Continuing...");
+        console.warn(`[WARN] Failed to select plan '${planName}' explicitly, it might be already selected. Continuing...`);
       }
 
-      // 15.7 Select '1 year' commitment if present
-      console.log("[STEP 15.7] Selecting '1 year' commitment...");
-      try {
-        // Menggunakan exact text agar bisa ngeklik langsung element aslinya tanpa peduli dia itu div, span, label, atau radio asli
-        const oneYearText = this.page.getByText('1 year', { exact: true }).first();
-        await oneYearText.waitFor({ state: "visible", timeout: 5000 });
-        console.log("[INFO] '1 year' option found, clicking...");
-        await oneYearText.click();
-      } catch (e) {
-        console.log("[INFO] '1 year' option not found or already selected, continuing...");
+      // 15.7 Select '1 year' commitment if present (Only for Copilot)
+      if (isCopilot) {
+        console.log("[STEP 15.7] Selecting '1 year' commitment...");
+        try {
+          const oneYearText = this.page.getByText('1 year', { exact: true }).first();
+          await oneYearText.waitFor({ state: "visible", timeout: 5000 });
+          console.log("[INFO] '1 year' option found, clicking...");
+          await oneYearText.click();
+        } catch (e) {
+          console.log("[INFO] '1 year' option not found or already selected, continuing...");
+        }
+      } else {
+        console.log("[STEP 15.7] Skipping commitment selection for non-Copilot product.");
       }
 
       // 16. Select 'Pay monthly'
@@ -532,6 +500,7 @@ class TeamsBot {
         await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
         await startTrialBtn.click();
         await teamsPage.waitForTimeout(5000);
+        await this.waitForSpinnerGone(15000);
       } catch (err) {
         console.warn("[WARN] 'Start trial' button not found in Teams. Continuing...");
       }
@@ -547,8 +516,16 @@ class TeamsBot {
       await this.page.goto("https://admin.microsoft.com/#/users", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
       await this.waitForSpinnerGone(3000);
 
-      // 25. Pilih user yang sama lagi (Baris Pertama)
-      console.log("[STEP 25] Re-selecting the first user to restore license...");
+      // 25. Search the same user again and select
+      console.log(`[STEP 25] Re-searching for user: ${fullEmail}...`);
+      
+      const finalSearchInput = this.page.locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]').first();
+      await this.waitForVisible(finalSearchInput);
+      await finalSearchInput.fill(fullEmail);
+      await this.page.keyboard.press("Enter");
+      
+      await this.waitForSpinnerGone(2000);
+      
       const finalUserRow = this.page.locator('div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button').first();
       await this.waitForVisible(finalUserRow);
       await finalUserRow.click();
@@ -561,23 +538,24 @@ class TeamsBot {
       await finalLicensesTab.click();
       await this.waitForSpinnerGone(2000);
 
-      // 27. Cantolin lagi lisensi sebelumnya (Check lagi)
-      console.log("[STEP 27] Re-checking the license (Office 365)...");
-      const finalLicenseCheckbox = this.page.locator('input[type="checkbox"][aria-label*="Office 365" i], input[type="checkbox"]:near(:text("Office 365"))').first();
-      const finalLicenseLabel = this.page.locator('label:has-text("Office 365")').first();
-      
-      try {
-        await this.page.waitForTimeout(2000);
-        const isChecked = await finalLicenseCheckbox.isChecked().catch(() => false);
-        if (!isChecked) {
-          console.log("[INFO] License is unchecked, checking it again...");
-          await finalLicenseCheckbox.check({ force: true });
-        } else {
-          console.log("[INFO] License is already checked.");
+      // 27. restore previously unchecked licenses
+      console.log("[STEP 27] Re-checking the previous licenses:", uncheckedLicenses.join(", "));
+      for (const licenseLabelText of uncheckedLicenses) {
+        if (!licenseLabelText) continue;
+        try {
+          console.log(`[INFO] Restoring license: "${licenseLabelText}"...`);
+          const locator = this.page.locator(`input[type="checkbox"][aria-label*="${licenseLabelText}" i], label:has-text("${licenseLabelText}")`).first();
+          
+          await locator.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+          const isChecked = await locator.isChecked().catch(() => false);
+          if (!isChecked) {
+            await locator.check({ force: true }).catch(async () => {
+              await locator.click({ force: true }).catch(() => {});
+            });
+          }
+        } catch (err) {
+          console.warn(`[WARN] Failed to restore license "${licenseLabelText}":`, err.message);
         }
-      } catch (err) {
-        console.warn("[WARN] Failed to re-check license via standard ways, trying label click...");
-        await finalLicenseLabel.click().catch(() => {});
       }
 
       await this.humanDelay(1000, 2000);
