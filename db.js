@@ -6,7 +6,7 @@ const connectDB = async () => {
   try {
     console.log("Connecting to MongoDB...");
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      dbName: "ms365bot",
+      dbName: "msteamsbot",
     });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (err) {
