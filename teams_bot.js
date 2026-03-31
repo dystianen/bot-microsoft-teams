@@ -170,6 +170,42 @@ class TeamsBot {
     throw new Error(`Button not found: ${names.join(", ")}`);
   }
 
+  async handlePopups() {
+    console.log("[INFO] Checking for any popups to dismiss...");
+    const names = ["Close", "Dismiss", "Maybe later", "Got it", "No thanks", "Tutup", "Lain kali", "Selesai", "X"];
+    const keywords = names.flatMap((n) => n.trim().toLowerCase().split(/\s+/));
+
+    let foundSomethingVisible = true;
+    let attempts = 0;
+    while (foundSomethingVisible && attempts < 3) {
+      foundSomethingVisible = false;
+      attempts++;
+      
+      for (const frame of this.page.frames()) {
+        try {
+          const foundName = await frame.evaluate((kws) => {
+            const candidates = [...document.querySelectorAll('button, [role="button"], a[role="button"], input[type="button"]')];
+            const el = candidates.find((b) => {
+              const text = (b.textContent || b.getAttribute("aria-label") || b.value || "").trim().toLowerCase();
+              const isVisible = !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length);
+              return text.length > 0 && text.length < 35 && kws.some((kw) => text.includes(kw)) && isVisible;
+            });
+            if (!el) return null;
+            el.click();
+            return (el.textContent || el.getAttribute("aria-label") || el.value || "button").trim();
+          }, keywords);
+
+          if (foundName) {
+            console.log(`[INFO] Dismissed popup button: "${foundName}" (Attempt ${attempts})`);
+            await this.humanDelay(1000, 2000);
+            foundSomethingVisible = true;
+            break; // Break the frame loop to start over from attempt
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
   getGenericLocator(keyword, elementType = "input") {
     return this.page
       .locator(`${elementType}[id*="${keyword}" i], ${elementType}[data-testid*="${keyword}" i], ${elementType}[name*="${keyword}" i], ${elementType}[aria-label*="${keyword}" i]`)
@@ -244,6 +280,8 @@ class TeamsBot {
         // 5.1 Cek apakah sudah sampai Dashboard?
         if (await dashboardMarker.isVisible().catch(() => false)) {
           console.log("[SUCCESS] Dashboard detected!");
+          await this.humanDelay(2000, 4000); // Wait for potential popups to load
+          await this.handlePopups();
           break;
         }
 
@@ -290,6 +328,7 @@ class TeamsBot {
       console.log("[STEP 6] Selecting 'Users' menu...");
       
       await this.waitForSpinnerGone(1000);
+      await this.handlePopups(); // One more check before interacting
       const navLocator = this.page.locator('[data-hint="ReactLeftNav"]').first();
       await this.waitForVisible(navLocator);
       await this.humanDelay(1000, 2000);
