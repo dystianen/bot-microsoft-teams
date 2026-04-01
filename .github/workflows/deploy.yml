@@ -15,10 +15,6 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Test SSH (debug)
-        run: |
-          ssh -i key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} "echo CONNECTED"
-
       - name: SSH Deploy
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -26,7 +22,6 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
-          debug: true
           script: |
             cd ${{ secrets.TARGET_DIR }}
             git pull origin main
