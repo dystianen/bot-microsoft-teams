@@ -315,6 +315,12 @@ function initializeBotHandlers(bot) {
               callback_data: `select_teams`,
             },
           ],
+          [
+            {
+              text: `🗑️ Delete History`,
+              callback_data: `delete_history`,
+            },
+          ],
         ],
       },
     };
@@ -368,6 +374,14 @@ function initializeBotHandlers(bot) {
       await userConf.save();
       bot.answerCallbackQuery(callbackQuery.id, { text: "📺 Microsoft Teams Room Selected" });
       bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft Teams Rooms Basic", { parse_mode: "HTML" });
+    } else if (data === "delete_history") {
+      try {
+        await AccountHistory.deleteMany({ telegram_id: chatId.toString() });
+        bot.answerCallbackQuery(callbackQuery.id, { text: "History deleted." });
+        bot.sendMessage(chatId, "✅ <b>Your account history has been cleared.</b>", { parse_mode: "HTML" });
+      } catch (err) {
+        bot.sendMessage(chatId, `❌ Error deleting history: ${err.message}`);
+      }
     }
   });
 
