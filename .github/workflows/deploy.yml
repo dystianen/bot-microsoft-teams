@@ -8,13 +8,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Setup SSH Key
+        run: |
+          echo "${{ secrets.VPS_PRIVATE_KEY_B64 }}" | base64 -d > key
+          chmod 600 key
+
+      - name: Test SSH (debug)
+        run: |
+          ssh -i key -o StrictHostKeyChecking=no ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} "echo CONNECTED"
+
       - name: SSH Deploy
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT }}
+          key_path: LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRUFBQUFBQkc1dmJtVUFBQUFFYm05dVpRQUFBQUFBQUFBQkFBQUFNd0FBQUF0emMyZ3RaVwpReU5UVXhPUUFBQUNETlJMMkR6dTZkeHd6ekFVYTYxcXZWbGFsMWxYemswL0xYWXN4dFRNWVpWd0FBQUtDTFg2Z1ZpMStvCkZRQUFBQXR6YzJndFpXUXlOVFV4T1FBQUFDRE5STDJEenU2ZHh3enpBVWE2MXF2VmxhbDFsWHprMC9MWFlzeHRUTVlaVncKQUFBRUFZWmZyNC83V0ZGUzk2K1VJUldqZ1dWWGxYUERvK3ZwZEJIblE3QU81TU9NMUV2WVBPN3AzSERQTUJScnJXcTlXVgpxWFdWZk9UVDh0ZGl6RzFNeGhsWEFBQUFGMlJwYzNScFlXNHVaVzU1ZFhOQVoyMWhhV3d1WTI5dEFRSURCQVVHCi0tLS0tRU5EIE9QRU5TU0ggUFJJVkFURSBLRVktLS0tLQo=
+          port: 22
           debug: true
           script: |
             cd ${{ secrets.TARGET_DIR }}
