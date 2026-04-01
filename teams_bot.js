@@ -362,7 +362,7 @@ class TeamsBot {
       );
       const usePasswordPrompt = this.page
         .locator(
-          'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password")',
+          'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password"), div[role="button"][aria-label*="Gunakan kata sandi saya" i], div[role="button"]:has-text("Gunakan kata sandi saya")',
         )
         .first();
       try {
@@ -409,7 +409,7 @@ class TeamsBot {
 
         // 5.2 Cek rintangan: Stay signed in
         const yesBtn = this.page
-          .locator('button:has-text("Yes"), input[value="Yes"], #idSIButton9')
+          .locator('button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], #idSIButton9')
           .first();
         if (await yesBtn.isVisible().catch(() => false)) {
           console.log("[INFO] Handling 'Stay signed in'...");
@@ -421,7 +421,7 @@ class TeamsBot {
         // 5.3 Cek rintangan: MFA Skip
         const skipBtn = this.page
           .locator(
-            'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton',
+            'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton',
           )
           .first();
         if (await skipBtn.isVisible().catch(() => false)) {
@@ -471,7 +471,7 @@ class TeamsBot {
 
       const usersMenu = this.page
         .locator(
-          'button[data-automation-id="LeftNavusersnodeNavToggler"], button[name="Users"], button:has-text("Users")',
+          'button[data-automation-id="LeftNavusersnodeNavToggler"], button[name="Users"], button:has-text("Users"), button[name="Pengguna"], button:has-text("Pengguna")',
         )
         .first();
       await this.waitForVisible(usersMenu);
@@ -531,7 +531,7 @@ class TeamsBot {
       console.log("[STEP 9] Selecting 'Licenses and apps' tab...");
       const licensesTab = this.page
         .locator(
-          'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")',
+          'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi")',
         )
         .first();
       await this.waitForVisible(licensesTab);
@@ -579,7 +579,7 @@ class TeamsBot {
       // 11. terus saves changes
       console.log("[STEP 11] Clicking 'Save changes'...");
       const saveBtn = this.page
-        .locator('button:has-text("Save changes"), button[id*="save" i]')
+        .locator('button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")')
         .first();
       await this.waitForVisible(saveBtn);
       await saveBtn.click();
@@ -594,10 +594,12 @@ class TeamsBot {
       const isTeamsRooms = catalogUrl.includes("microsoft-teams-rooms-basic");
       const isPhoneSystem = catalogUrl.includes("phone-system");
       const isCopilot = catalogUrl.includes("copilot");
+      const isBusinessAppsFree = catalogUrl.includes("business-apps-free-");
 
       let planName = "Microsoft 365 Copilot"; // Fallback
       if (isTeamsRooms) planName = "Microsoft Teams Rooms Basic";
       else if (isPhoneSystem) planName = "Microsoft 365 Phone System";
+      else if (isBusinessAppsFree) planName = "Business Apps (free)";
 
       console.log(
         `[STEP 12] Navigating to Marketplace catalog: ${catalogUrl}... (Plan: ${planName})`,
@@ -614,7 +616,7 @@ class TeamsBot {
       console.log(`[STEP 15.5] Selecting '${planName}' plan...`);
       const planDropdown = this.page
         .locator(
-          'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"]',
+          'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"], div:has-text("Pilih paket") select, [aria-label*="Pilih paket" i], div:has-text("Pilih paket") [role="combobox"]',
         )
         .first();
       await this.waitForVisible(planDropdown);
@@ -647,7 +649,7 @@ class TeamsBot {
         console.log("[STEP 15.7] Selecting '1 year' commitment...");
         try {
           const oneYearText = this.page
-            .getByText("1 year", { exact: true })
+            .locator(':text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")')
             .first();
           await oneYearText.waitFor({ state: "visible", timeout: 5000 });
           console.log("[INFO] '1 year' option found, clicking...");
@@ -667,7 +669,7 @@ class TeamsBot {
       console.log("[STEP 16] Selecting 'Pay monthly' billing frequency...");
       try {
         const payMonthlyText = this.page
-          .getByText("Pay monthly", { exact: true })
+          .locator(':text-is("Pay monthly"), :text-is("Bayar bulanan")')
           .first();
         await payMonthlyText.waitFor({ state: "visible", timeout: 5000 });
         console.log("[INFO] 'Pay monthly' option found, clicking...");
@@ -681,7 +683,7 @@ class TeamsBot {
 
       // 17. Menunggu button buy muncul lalu click
       console.log("[STEP 17] Waiting for 'Buy' button and clicking...");
-      const buyBtn = this.page.locator('button:has-text("Buy")').first();
+      const buyBtn = this.page.locator('button:has-text("Buy"), button:has-text("Beli")').first();
       await this.waitForVisible(buyBtn);
       await buyBtn.click();
       await this.waitForSpinnerGone(15000);
@@ -690,7 +692,7 @@ class TeamsBot {
       try {
         // Cari container .ms-Checkbox yang mengandung teks recurring payments
         const checkboxContainer = this.page
-          .locator('.ms-Checkbox:has-text("authorize recurring payments")')
+          .locator('.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang")')
           .first();
 
         const isVisible = await checkboxContainer
@@ -757,7 +759,7 @@ class TeamsBot {
       // 19. Place order (STRICT MODE)
       console.log("[STEP 19] Clicking 'Place order'...");
       const placeOrderBtn = this.page
-        .locator('button:has-text("Place order")')
+        .locator('button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan")')
         .first();
 
       console.log(
@@ -918,7 +920,7 @@ class TeamsBot {
       console.log("[STEP 26] Selecting 'Licenses and apps' tab...");
       const finalLicensesTab = this.page
         .locator(
-          'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")',
+          'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi")',
         )
         .first();
       await this.waitForVisible(finalLicensesTab);
@@ -962,7 +964,7 @@ class TeamsBot {
       // 28. Save changes
       console.log("[STEP 28] Clicking 'Save changes'...");
       const finalSaveBtn = this.page
-        .locator('button:has-text("Save changes"), button[id*="save" i]')
+        .locator('button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")')
         .first();
       await this.waitForVisible(finalSaveBtn);
       await finalSaveBtn.click();

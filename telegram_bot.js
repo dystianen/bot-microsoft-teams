@@ -339,12 +339,8 @@ function initializeBotHandlers(bot) {
           ],
           [
             {
-              text: `📞 Select Microsoft Copilot`,
-              callback_data: `select_copilot`,
-            },
-            {
-              text: `📺 Select Microsoft Teams Room`,
-              callback_data: `select_teams`,
+              text: `📦 Change Product / URL`,
+              callback_data: `show_product_menu`,
             },
           ],
         ],
@@ -392,6 +388,20 @@ function initializeBotHandlers(bot) {
         `✅ <b>Headless Mode:</b> ${userConf.headless ? "Active" : "Inactive"}`,
         { parse_mode: "HTML" },
       );
+    } else if (data === "show_product_menu") {
+      const options = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📞 Microsoft Copilot", callback_data: "select_copilot" }],
+            [{ text: "📺 Microsoft Teams Rooms Basic", callback_data: "select_teams" }],
+            [{ text: "💼 Business Apps (free)", callback_data: "select_business_apps" }],
+          ],
+        },
+      };
+      bot.sendMessage(chatId, "🛒 <b>Select a product to automate:</b>", {
+        parse_mode: "HTML",
+        ...options,
+      });
     } else if (data === "select_copilot") {
       const userConf = await getUserConfig(chatId);
       userConf.microsoftUrl =
@@ -418,6 +428,20 @@ function initializeBotHandlers(bot) {
       bot.sendMessage(
         chatId,
         "✅ <b>Product Set to:</b> Microsoft Teams Rooms Basic",
+        { parse_mode: "HTML" },
+      );
+    } else if (data === "select_business_apps") {
+      const userConf = await getUserConfig(chatId);
+      userConf.microsoftUrl =
+        "https://admin.cloud.microsoft/?#/catalog/m/offer-details/business-apps-free-/CFQ7TTC0LHZ0";
+      userConf.updatedAt = new Date();
+      await userConf.save();
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: "💼 Business Apps Free Selected",
+      });
+      bot.sendMessage(
+        chatId,
+        "✅ <b>Product Set to:</b> Business Apps (free)",
         { parse_mode: "HTML" },
       );
     }
