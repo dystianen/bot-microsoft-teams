@@ -828,7 +828,7 @@ class TeamsBot {
         await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
         await startTrialBtn.click();
         await teamsPage.waitForTimeout(5000);
-        await this.waitForSpinnerGone(15000);
+        await this.waitForSpinnerGone(30000);
       } catch (err) {
         console.warn(
           "[WARN] 'Start trial' button not found in Teams. Continuing...",
