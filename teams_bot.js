@@ -801,20 +801,32 @@ class TeamsBot {
       await this.waitForSpinnerGone(); // Note: this waits for spinner in this.page, let's use a helper for teamsPage if needed
 
       // 22. Menunggu sampe button sign in muncul click
-      console.log("[STEP 22] Waiting for 'Sign in' button in Teams...");
+      console.log("[STEP 22] Waiting for 'Sign in' button or Permission Error in Teams...");
       const teamsSignInBtn = teamsPage
         .locator(
           'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")',
         )
         .first();
+        
+      const permissionErrorLocator = teamsPage
+        .getByText("You don't have the required permissions to access this org")
+        .first();
+
       try {
-        await teamsSignInBtn.waitFor({ state: "visible", timeout: 30000 });
+        await teamsSignInBtn.or(permissionErrorLocator).waitFor({ state: "visible", timeout: 30000 });
+        
+        if (await permissionErrorLocator.isVisible().catch(() => false)) {
+          console.error("[ERROR] Permission error page detected before Sign in.");
+          throw new Error("Don't have the required permissions to access this org");
+        }
+        
         await teamsSignInBtn.click();
         await teamsPage.waitForTimeout(5000);
       } catch (err) {
-        console.log(
-          "[INFO] 'Sign in' button not found or already signed in Teams. Continuing...",
-        );
+        if (err.message === "dont have permission") {
+          throw err;
+        }
+        throw new Error("Gagal menemukan tombol 'Sign in' di Teams.");
       }
 
       // 23. Menunggu start trial muncul lalu click
@@ -830,9 +842,7 @@ class TeamsBot {
         await teamsPage.waitForTimeout(5000);
         await this.waitForSpinnerGone(30000);
       } catch (err) {
-        console.warn(
-          "[WARN] 'Start trial' button not found in Teams. Continuing...",
-        );
+        throw new Error("Gagal menemukan tombol 'Start trial' di Teams.");
       }
 
       // Close the teams tab after trial
