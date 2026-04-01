@@ -10,8 +10,10 @@ jobs:
     steps:
       - name: Setup SSH Key
         run: |
-          echo "${{ secrets.VPS_PRIVATE_KEY_B64 }}" | base64 -d > key
-          chmod 600 key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
       - name: Test SSH (debug)
         run: |
@@ -22,7 +24,7 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
-          key_path: key
+          key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           debug: true
           script: |
