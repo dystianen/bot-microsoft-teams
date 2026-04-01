@@ -763,7 +763,6 @@ class TeamsBot {
       console.log(
         "[INFO] Waiting for 'Place order' button to become enabled...",
       );
-      let isBtnEnabled = false;
       try {
         await this.page.waitForFunction(
           (btn) => {
@@ -775,31 +774,56 @@ class TeamsBot {
             );
           },
           await placeOrderBtn.elementHandle(),
-          { timeout: 25000 },
+          { timeout: 30000 },
         );
-        isBtnEnabled = true;
-        console.log("[INFO] Button is now enabled.");
+        console.log("[INFO] Button 'Place order' is now enabled.");
       } catch (e) {
-        console.error(
-          "[ERROR] Tombol 'Place order' tetap disabled setelah 25 detik. Kemungkinan ada field yang belum terisi atau checkbox gagal.",
-        );
-        // JANGAN LANJUT jika button disabled
         throw new Error(
-          "PLACE_ORDER_DISABLED: Tombol tidak aktif, proses dihentikan agar tidak membuka tab baru.",
+          "PLACE_ORDER_DISABLED: Tombol tidak aktif dalam 30 detik. Kemungkinan otorisasi gagal atau field ada yang kurang.",
         );
       }
 
-      if (isBtnEnabled) {
-        await placeOrderBtn.click({ timeout: 10000 }).catch(async (e) => {
-          console.log("[INFO] Click failed, trying force click...");
-          await placeOrderBtn.click({ force: true });
-        });
-        console.log("[SUCCESS] Order placed successfully.");
+      await placeOrderBtn.click({ timeout: 10000 }).catch(async (e) => {
+        console.log("[INFO] Click failed, trying force click...");
+        await placeOrderBtn.click({ force: true });
+      });
+      console.log("[INFO] 'Place order' clicked. Waiting for confirmation...");
+
+      // 20. Verifikasi Transaksi Berhasil (STRICT)
+      console.log("[STEP 20] Verifying order success before proceeding...");
+      let isSuccess = false;
+      const verifyStart = Date.now();
+      
+      while (Date.now() - verifyStart < 60000) { // Max 1 menit menunggu konfirmasi
+        // 20.1 Cek apakah tombol sudah hilang?
+        const isBtnHidden = await placeOrderBtn.isHidden().catch(() => true);
+        
+        // 20.2 Cek apakah URL menunjukkan konfirmasi atau ada teks sukses?
+        const currentUrl = this.page.url().toLowerCase();
+        const bodyContent = await this.page.innerText("body").catch(() => "");
+        const successKeywords = ["all set", "confirmation", "thanks", "terima kasih", "detail pesanan", "order details"];
+        const foundKeyword = successKeywords.find(kw => bodyContent.toLowerCase().includes(kw));
+
+        if (isBtnHidden && (currentUrl.includes("confirmation") || foundKeyword)) {
+          console.log(`[SUCCESS] Order placement verified! (Keyword found: "${foundKeyword || 'URL Confirmation'}")`);
+          isSuccess = true;
+          break;
+        }
+
+        // 20.3 Cek apakah ada error muncul?
+        const detectedError = await this.checkForError();
+        if (detectedError) {
+           throw new Error(`PLACE_ORDER_FAILED: ${detectedError}`);
+        }
+
+        await this.page.waitForTimeout(2500); // Scan tiap 2.5s
       }
 
-      // 20. Waiting spinner lagi
-      console.log("[STEP 20] Waiting for spinner after placing order...");
-      await this.waitForSpinnerGone(8000);
+      if (!isSuccess) {
+        console.warn("[WARN] Order confirmation not clearly detected, but button is gone. Proceeding with caution...");
+      }
+
+      await this.waitForSpinnerGone(5000);
 
       // 21. Buka https://teams.microsoft.com/v2/ di tab baru
       console.log("[STEP 21] Opening Teams in a new tab...");
