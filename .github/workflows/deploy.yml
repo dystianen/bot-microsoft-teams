@@ -17,6 +17,4 @@ jobs:
           port: 22
           request_pty: true
           script: |
-            echo "connected"
-            pwd
-            ls /C/Users/Administrator/Downloads/source/
+            echo "connected" && pwd
