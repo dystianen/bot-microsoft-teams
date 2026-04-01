@@ -177,7 +177,7 @@ class TeamsBot {
           );
           return true;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 2. Fallback: Playwright native click di Main Page & Semua Frames
@@ -214,7 +214,7 @@ class TeamsBot {
           );
           return true;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     console.error(`[ERROR] Button not found in any frame for names:`, names);
@@ -298,7 +298,7 @@ class TeamsBot {
             foundSomethingVisible = true;
             break; // Break the frame loop to start over from attempt
           }
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   }
@@ -357,26 +357,26 @@ class TeamsBot {
       ]);
 
       // 3.5 Handle "Choose a way to sign in" if it appears
-        // console.log(
-        //   "[STEP 3.5] Checking for 'Choose a way to sign in' prompt...",
-        // );
-        // const usePasswordPrompt = this.page
-        //   .locator(
-        //     'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password")',
-        //   )
-        //   .first();
-        // try {
-        //   await usePasswordPrompt.waitFor({ state: "visible", timeout: 5000 });
-        //   console.log(
-        //     "[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...",
-        //   );
-        //   await usePasswordPrompt.click();
-        //   await this.humanDelay(1000, 2000);
-        // } catch (e) {
-        //   console.log(
-        //     "[INFO] No 'Choose a way to sign in' prompt found, continuing...",
-        //   );
-        // }
+      console.log(
+        "[STEP 3.5] Checking for 'Choose a way to sign in' prompt...",
+      );
+      const usePasswordPrompt = this.page
+        .locator(
+          'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password")',
+        )
+        .first();
+      try {
+        await usePasswordPrompt.waitFor({ state: "visible", timeout: 5000 });
+        console.log(
+          "[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...",
+        );
+        await usePasswordPrompt.click();
+        await this.humanDelay(1000, 2000);
+      } catch (e) {
+        console.log(
+          "[INFO] No 'Choose a way to sign in' prompt found, continuing...",
+        );
+      }
 
       // 4. masukin password
       const password = this.accountConfig.microsoftAccount.password;
@@ -817,19 +817,19 @@ class TeamsBot {
           'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")',
         )
         .first();
-        
+
       const permissionErrorLocator = teamsPage
         .getByText("You don't have the required permissions to access this org")
         .first();
 
       try {
         await teamsSignInBtn.or(permissionErrorLocator).waitFor({ state: "visible", timeout: 30000 });
-        
+
         if (await permissionErrorLocator.isVisible().catch(() => false)) {
           console.error("[ERROR] Permission error page detected before Sign in.");
           throw new Error("Don't have the required permissions to access this org");
         }
-        
+
         await teamsSignInBtn.click();
         await teamsPage.waitForTimeout(5000);
       } catch (err) {
@@ -856,7 +856,7 @@ class TeamsBot {
       }
 
       // Close the teams tab after trial
-      await teamsPage.close().catch(() => {});
+      await teamsPage.close().catch(() => { });
 
       // 24. Balik lagi ke admin user (original tab)
       console.log("[STEP 24] Returning to Admin Center to restore license...");
@@ -918,11 +918,11 @@ class TeamsBot {
 
           await locator
             .waitFor({ state: "visible", timeout: 5000 })
-            .catch(() => {});
+            .catch(() => { });
           const isChecked = await locator.isChecked().catch(() => false);
           if (!isChecked) {
             await locator.check({ force: true }).catch(async () => {
-              await locator.click({ force: true }).catch(() => {});
+              await locator.click({ force: true }).catch(() => { });
             });
           }
         } catch (err) {
