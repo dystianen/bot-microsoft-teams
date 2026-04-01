@@ -17,4 +17,6 @@ jobs:
           port: 22
           request_pty: true
           script: |
-            cd /C/Users/Administrator/Downloads/source/bot-microsoft-teams && git pull origin main && npm install --production && pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js && pm2 save
+            echo "connected"
+            pwd
+            ls /C/Users/Administrator/Downloads/source/
