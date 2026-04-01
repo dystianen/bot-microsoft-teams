@@ -351,26 +351,26 @@ class TeamsBot {
       ]);
 
       // 3.5 Handle "Choose a way to sign in" if it appears
-      console.log(
-        "[STEP 3.5] Checking for 'Choose a way to sign in' prompt...",
-      );
-      const usePasswordPrompt = this.page
-        .locator(
-          'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password")',
-        )
-        .first();
-      try {
-        await usePasswordPrompt.waitFor({ state: "visible", timeout: 5000 });
-        console.log(
-          "[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...",
-        );
-        await usePasswordPrompt.click();
-        await this.humanDelay(1000, 2000);
-      } catch (e) {
-        console.log(
-          "[INFO] No 'Choose a way to sign in' prompt found, continuing...",
-        );
-      }
+        // console.log(
+        //   "[STEP 3.5] Checking for 'Choose a way to sign in' prompt...",
+        // );
+        // const usePasswordPrompt = this.page
+        //   .locator(
+        //     'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password")',
+        //   )
+        //   .first();
+        // try {
+        //   await usePasswordPrompt.waitFor({ state: "visible", timeout: 5000 });
+        //   console.log(
+        //     "[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...",
+        //   );
+        //   await usePasswordPrompt.click();
+        //   await this.humanDelay(1000, 2000);
+        // } catch (e) {
+        //   console.log(
+        //     "[INFO] No 'Choose a way to sign in' prompt found, continuing...",
+        //   );
+        // }
 
       // 4. masukin password
       const password = this.accountConfig.microsoftAccount.password;
