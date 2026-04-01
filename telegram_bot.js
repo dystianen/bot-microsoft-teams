@@ -2,7 +2,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const config = require("./config");
 const { processSingleAccount } = require("./index");
 const connectDB = require("./db");
-const { SuccessAccount, UserConfig } = require("./models");
+const { AccountHistory, UserConfig } = require("./models");
 const date = require("date-and-time");
 
 // Wrap in an async function to allow awaiting connection
@@ -77,7 +77,8 @@ function initializeBotHandlers(bot) {
       keyboard: [
         [{ text: "➕ Add Account" }],
         [{ text: "🚀 Generate" }, { text: "🛑 Stop Queue" }],
-        [{ text: "⚙️ Config" }, { text: "🧹 Reset Session" }],
+        [{ text: "⚙️ Config" }, { text: "📜 History" }],
+        [{ text: "🧹 Reset Session" }],
       ],
       resize_keyboard: true,
     },
@@ -153,18 +154,20 @@ function initializeBotHandlers(bot) {
         try {
           const result = await processSingleAccount(pairedData, currentIdx - 1, originalTotal);
 
+          const historyRecord = new AccountHistory({
+            email: accountData.email,
+            password: accountData.password,
+            telegram_id: chatId.toString(),
+            status: result.status,
+            log: result.log,
+          });
+          await historyRecord.save().catch((e) => {});
+
           if (result.status === "SUCCESS") {
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
             message += `Time: <code>${date.format(new Date(), "DD MMM YYYY HH:mm", true)}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
-            
-            const successAcc = new SuccessAccount({
-                email: accountData.email,
-                password: accountData.password,
-                telegram_id: chatId.toString(),
-            });
-            await successAcc.save().catch(e => {});
           } else {
             let message = `❌ <b>Failed [${currentIdx}/${originalTotal}] for ${escapeHTML(accountData.email)}</b>\n`;
             message += `Log: ${escapeHTML(result.log || "Unknown error")}`;
@@ -172,6 +175,15 @@ function initializeBotHandlers(bot) {
           }
         } catch (err) {
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
+          // Also record critical process failures
+          const failRecord = new AccountHistory({
+            email: accountData.email,
+            password: accountData.password,
+            telegram_id: chatId.toString(),
+            status: "FAILED",
+            log: err.message,
+          });
+          await failRecord.save().catch(() => {});
         }
       };
 
@@ -234,6 +246,36 @@ function initializeBotHandlers(bot) {
       sessions[chatId].forceStop = true;
     }
     bot.sendMessage(chatId, "🛑 Stopping queue...");
+  });
+
+  bot.onText(/📜 History/, async (msg) => {
+    const chatId = msg.chat.id;
+    try {
+      const records = await AccountHistory.find({ telegram_id: chatId.toString() })
+        .sort({ createdAt: -1 })
+        .limit(10);
+
+      if (records.length === 0) {
+        return bot.sendMessage(chatId, "📭 No history found.");
+      }
+
+      let message = "📜 <b>Recent Account History (Last 10):</b>\n\n";
+      records.forEach((rec, idx) => {
+        const timeStr = date.format(rec.createdAt, "DD/MM HH:mm");
+        const statusIcon = rec.status === "SUCCESS" ? "✅" : "❌";
+        message += `${idx + 1}. ${statusIcon} <code>${timeStr}</code>\n`;
+        message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
+        message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
+        if (rec.status === "FAILED") {
+          message += `⚠️ Log: ${escapeHTML(rec.log || "No log")}\n`;
+        }
+        message += "────────────────\n";
+      });
+
+      bot.sendMessage(chatId, message, { parse_mode: "HTML" });
+    } catch (err) {
+      bot.sendMessage(chatId, `❌ Error fetching history: ${err.message}`);
+    }
   });
 
   bot.onText(/🧹 Reset Session/, (msg) => {

@@ -1,9 +1,11 @@
 const mongoose = require("mongoose");
 
-const SuccessAccountSchema = new mongoose.Schema({
+const AccountHistorySchema = new mongoose.Schema({
   email: { type: String, required: true },
   password: { type: String, required: true },
   telegram_id: { type: String, required: true },
+  status: { type: String, default: "SUCCESS" }, // SUCCESS, FAILED
+  log: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -16,6 +18,6 @@ const UserConfigSchema = new mongoose.Schema({
 });
 
 module.exports = {
-  SuccessAccount: mongoose.model("SuccessAccount", SuccessAccountSchema),
+  AccountHistory: mongoose.model("AccountHistory", AccountHistorySchema),
   UserConfig: mongoose.model("UserConfig", UserConfigSchema),
 };
