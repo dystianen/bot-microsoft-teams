@@ -147,6 +147,7 @@ function initializeBotHandlers(bot) {
           microsoftAccount: accountData,
           telegram_id: chatId,
           productUrl: userConf.microsoftUrl,
+          headless: userConf.headless, // Pass the user's preference
         };
 
         try {
@@ -257,6 +258,10 @@ function initializeBotHandlers(bot) {
               text: `🚀 Concurrency: ${userConf.concurrencyLimit}`,
               callback_data: `set_concurrency`,
             },
+            {
+              text: `👁️ Headless: ${userConf.headless ? "Active" : "Inactive"}`,
+              callback_data: `toggle_headless`,
+            },
           ],
           [
             {
@@ -276,6 +281,7 @@ function initializeBotHandlers(bot) {
       chatId,
       `⚙️ <b>Current Configuration:</b>\n\n` +
       `<b>Concurrency:</b> ${userConf.concurrencyLimit}\n` +
+      `<b>Headless Mode:</b> <code>${userConf.headless ? "Active (No window)" : "Inactive (Visible window)"}</code>\n` +
       `<b>Active URL:</b> <code>${escapeHTML(userConf.microsoftUrl)}</code>\n\n` +
       `Click buttons below to change settings.`,
       { parse_mode: "HTML", ...options },
@@ -299,6 +305,13 @@ function initializeBotHandlers(bot) {
         chatId,
         "How many accounts should run together? (Enter a number, e.g., 5)",
       );
+    } else if (data === "toggle_headless") {
+      const userConf = await getUserConfig(chatId);
+      userConf.headless = !userConf.headless;
+      userConf.updatedAt = new Date();
+      await userConf.save();
+      bot.answerCallbackQuery(callbackQuery.id, { text: `Browser window now: ${userConf.headless ? 'Hidden' : 'Visible'}` });
+      bot.sendMessage(chatId, `✅ <b>Headless Mode:</b> ${userConf.headless ? "Active" : "Inactive"}`, { parse_mode: "HTML" });
     } else if (data === "select_copilot") {
       const userConf = await getUserConfig(chatId);
       userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-365-copilot/CFQ7TTC0MM8R";

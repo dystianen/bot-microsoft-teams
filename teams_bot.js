@@ -138,13 +138,12 @@ class TeamsBot {
 
   async clickButtonWithPossibleNames(names) {
     await this.waitForSpinnerGone();
-    const keywords = names.flatMap((n) => n.trim().toLowerCase().split(/\s+/));
-    const uniqueKeywords = [...new Set(keywords)];
+    const keywords = names.map((n) => n.trim().toLowerCase());
 
     // 1. Coba klik di Main Page & Semua Frames menggunakan JS
     for (const frame of this.page.frames()) {
       try {
-        const found = await frame.evaluate((keywords) => {
+        const found = await frame.evaluate((kws) => {
           const candidates = [
             ...document.querySelectorAll(
               'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]',
@@ -159,17 +158,19 @@ class TeamsBot {
             )
               .trim()
               .toLowerCase();
-            return (
-              text.length > 0 &&
-              text.length < 60 &&
-              keywords.some((kw) => text.includes(kw))
-            );
+
+            if (!text || text.length >= 60) return false;
+
+            return kws.some((kw) => {
+              const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+              // Use word boundary to avoid partial matches like "no" in "notifications"
+              return new RegExp(`\\b${escaped}\\b`, "i").test(text);
+            });
           });
           if (!el) return null;
           el.click();
           return el.textContent?.trim() || el.value || "unknown";
-        }, uniqueKeywords);
-
+        }, keywords);
         if (found) {
           console.log(
             `[INFO] Clicked: "${found}" (in frame: ${frame.url() === this.page.url() ? "main" : "subframe"})`,
@@ -233,7 +234,8 @@ class TeamsBot {
       "Selesai",
       "X",
     ];
-    const keywords = names.flatMap((n) => n.trim().toLowerCase().split(/\s+/));
+    // Don't split phrases into words to avoid false positives (e.g. "no" in "notifications")
+    const keywords = names.map((n) => n.trim().toLowerCase());
 
     let foundSomethingVisible = true;
     let attempts = 0;
@@ -260,19 +262,23 @@ class TeamsBot {
                 b.offsetHeight ||
                 b.getClientRects().length
               );
+              if (!isVisible) return false;
 
-              const isMatch = kws.some(
-                (kw) =>
-                  textContent.includes(kw) ||
-                  ariaLabel.includes(kw) ||
-                  val.includes(kw) ||
-                  titleMsg.includes(kw)
-              );
+              const isMatch = kws.some((kw) => {
+                const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+                const regex = new RegExp(`\\b${escaped}\\b`, "i");
+                return (
+                  regex.test(textContent) ||
+                  regex.test(ariaLabel) ||
+                  regex.test(val) ||
+                  regex.test(titleMsg)
+                );
+              });
 
               // Limit length to avoid clicking huge buttons accidentally
               const btnLength = Math.max(textContent.length, ariaLabel.length, val.length, titleMsg.length);
 
-              return isVisible && isMatch && btnLength > 0 && btnLength < 35;
+              return isMatch && btnLength > 0 && btnLength < 35;
             });
             if (!el) return null;
             el.click();
@@ -315,7 +321,7 @@ class TeamsBot {
     } else {
       console.log("[STEP 1] Launching local browser in incognito mode...");
       this.browser = await chromium.launch({
-        headless: config.headless,
+        headless: this.accountConfig?.headless !== undefined ? this.accountConfig.headless : config.headless,
         args: ["--incognito", "--disable-blink-features=AutomationControlled"],
       });
       this.context = await this.browser.newContext();
