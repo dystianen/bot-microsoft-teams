@@ -77,8 +77,8 @@ function initializeBotHandlers(bot) {
       keyboard: [
         [{ text: "➕ Add Account" }],
         [{ text: "🚀 Generate" }, { text: "🛑 Stop Queue" }],
-        [{ text: "⚙️ Config" }, { text: "📜 History" }],
-        [{ text: "🧹 Reset Session" }],
+        [{ text: "⚙️ Config" }, { text: "🧹 Reset Session" }],
+        [{ text: "📜 History" }, { text: `🗑️ Delete History` }],
       ],
       resize_keyboard: true,
     },
@@ -100,11 +100,9 @@ function initializeBotHandlers(bot) {
     const chatId = msg.chat.id;
     sessions[chatId] = sessions[chatId] || { accounts: [], step: "IDLE" };
     sessions[chatId].step = "WAIT_ACCOUNT";
-    bot.sendMessage(
-      chatId,
-      "Send email|password (one per line):",
-      { parse_mode: "Markdown" },
-    );
+    bot.sendMessage(chatId, "Send email|password (one per line):", {
+      parse_mode: "Markdown",
+    });
   });
 
   bot.onText(/🚀 Generate/, async (msg) => {
@@ -116,10 +114,7 @@ function initializeBotHandlers(bot) {
     }
 
     if (session.accounts.length === 0) {
-      return bot.sendMessage(
-        chatId,
-        "Please add accounts first.",
-      );
+      return bot.sendMessage(chatId, "Please add accounts first.");
     }
 
     const userConf = await getUserConfig(chatId);
@@ -152,7 +147,11 @@ function initializeBotHandlers(bot) {
         };
 
         try {
-          const result = await processSingleAccount(pairedData, currentIdx - 1, originalTotal);
+          const result = await processSingleAccount(
+            pairedData,
+            currentIdx - 1,
+            originalTotal,
+          );
 
           const historyRecord = new AccountHistory({
             email: accountData.email,
@@ -190,29 +189,38 @@ function initializeBotHandlers(bot) {
       try {
         while (true) {
           // If we can start a new worker (below concurrency limit AND have accounts left)
-          if (activeWorkers < maxWorkers && session.accounts.length > 0 && !session.forceStop) {
+          if (
+            activeWorkers < maxWorkers &&
+            session.accounts.length > 0 &&
+            !session.forceStop
+          ) {
             const accountData = session.accounts.shift();
             globalIdx++;
             const currentIdx = globalIdx;
 
             activeWorkers++;
             // Launch in background
-            const promise = processAccount(accountData, currentIdx).finally(() => {
-              activeWorkers--;
-              pendingPromises.delete(promise);
-            });
+            const promise = processAccount(accountData, currentIdx).finally(
+              () => {
+                activeWorkers--;
+                pendingPromises.delete(promise);
+              },
+            );
             pendingPromises.add(promise);
 
-            // STAGGER: ALWAYS wait 5s after starting each new window, 
+            // STAGGER: ALWAYS wait 5s after starting each new window,
             // unless we've reached the concurrency limit or no accounts left.
             if (session.accounts.length > 0 && activeWorkers < maxWorkers) {
               await new Promise((r) => setTimeout(r, 5000));
             }
-          } 
+          }
           // If the queue is finished or forced to stop, wait for remaining workers to finish then break
-          else if (activeWorkers === 0 && (session.accounts.length === 0 || session.forceStop)) {
+          else if (
+            activeWorkers === 0 &&
+            (session.accounts.length === 0 || session.forceStop)
+          ) {
             break;
-          } 
+          }
           // If we are at concurrency limit, wait 1s and check again
           else {
             await new Promise((r) => setTimeout(r, 1000));
@@ -224,14 +232,25 @@ function initializeBotHandlers(bot) {
         }
       } catch (err) {
         console.error("[Queue Error]", err);
-        await safeSendMessage(chatId, `⚠️ Queue error: ${escapeHTML(err.message)}`);
+        await safeSendMessage(
+          chatId,
+          `⚠️ Queue error: ${escapeHTML(err.message)}`,
+        );
       } finally {
         session.running = false;
         if (session.forceStop) {
           session.forceStop = false;
-          bot.sendMessage(chatId, "🛑 Queue processing stopped successfully.", mainMenu);
+          bot.sendMessage(
+            chatId,
+            "🛑 Queue processing stopped successfully.",
+            mainMenu,
+          );
         } else {
-          bot.sendMessage(chatId, "🏁 Finished processing session accounts.", mainMenu);
+          bot.sendMessage(
+            chatId,
+            "🏁 Finished processing session accounts.",
+            mainMenu,
+          );
         }
       }
     };
@@ -251,7 +270,9 @@ function initializeBotHandlers(bot) {
   bot.onText(/📜 History/, async (msg) => {
     const chatId = msg.chat.id;
     try {
-      const records = await AccountHistory.find({ telegram_id: chatId.toString() })
+      const records = await AccountHistory.find({
+        telegram_id: chatId.toString(),
+      })
         .sort({ createdAt: -1 })
         .limit(10);
 
@@ -278,14 +299,25 @@ function initializeBotHandlers(bot) {
     }
   });
 
+  bot.onText(/🗑️ Delete History/, async (msg) => {
+    const chatId = msg.chat.id;
+    try {
+      await AccountHistory.deleteMany({ telegram_id: chatId.toString() });
+      bot.answerCallbackQuery(callbackQuery.id, { text: "History deleted." });
+      bot.sendMessage(
+        chatId,
+        "✅ <b>Your account history has been cleared.</b>",
+        { parse_mode: "HTML" },
+      );
+    } catch (err) {
+      bot.sendMessage(chatId, `❌ Error deleting history: ${err.message}`);
+    }
+  });
+
   bot.onText(/🧹 Reset Session/, (msg) => {
     const chatId = msg.chat.id;
     sessions[chatId] = { accounts: [], step: "IDLE", running: false };
-    bot.sendMessage(
-      chatId,
-      "Session cleared.",
-      mainMenu,
-    );
+    bot.sendMessage(chatId, "Session cleared.", mainMenu);
   });
 
   bot.onText(/⚙️ Config/, async (msg) => {
@@ -315,12 +347,6 @@ function initializeBotHandlers(bot) {
               callback_data: `select_teams`,
             },
           ],
-          [
-            {
-              text: `🗑️ Delete History`,
-              callback_data: `delete_history`,
-            },
-          ],
         ],
       },
     };
@@ -328,10 +354,10 @@ function initializeBotHandlers(bot) {
     bot.sendMessage(
       chatId,
       `⚙️ <b>Current Configuration:</b>\n\n` +
-      `<b>Concurrency:</b> ${userConf.concurrencyLimit}\n` +
-      `<b>Headless Mode:</b> <code>${userConf.headless ? "Active (No window)" : "Inactive (Visible window)"}</code>\n` +
-      `<b>Active URL:</b> <code>${escapeHTML(userConf.microsoftUrl)}</code>\n\n` +
-      `Click buttons below to change settings.`,
+        `<b>Concurrency:</b> ${userConf.concurrencyLimit}\n` +
+        `<b>Headless Mode:</b> <code>${userConf.headless ? "Active (No window)" : "Inactive (Visible window)"}</code>\n` +
+        `<b>Active URL:</b> <code>${escapeHTML(userConf.microsoftUrl)}</code>\n\n` +
+        `Click buttons below to change settings.`,
       { parse_mode: "HTML", ...options },
     );
   });
@@ -358,30 +384,42 @@ function initializeBotHandlers(bot) {
       userConf.headless = !userConf.headless;
       userConf.updatedAt = new Date();
       await userConf.save();
-      bot.answerCallbackQuery(callbackQuery.id, { text: `Browser window now: ${userConf.headless ? 'Hidden' : 'Visible'}` });
-      bot.sendMessage(chatId, `✅ <b>Headless Mode:</b> ${userConf.headless ? "Active" : "Inactive"}`, { parse_mode: "HTML" });
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: `Browser window now: ${userConf.headless ? "Hidden" : "Visible"}`,
+      });
+      bot.sendMessage(
+        chatId,
+        `✅ <b>Headless Mode:</b> ${userConf.headless ? "Active" : "Inactive"}`,
+        { parse_mode: "HTML" },
+      );
     } else if (data === "select_copilot") {
       const userConf = await getUserConfig(chatId);
-      userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-365-copilot/CFQ7TTC0MM8R";
+      userConf.microsoftUrl =
+        "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-365-copilot/CFQ7TTC0MM8R";
       userConf.updatedAt = new Date();
       await userConf.save();
-      bot.answerCallbackQuery(callbackQuery.id, { text: "📞 Microsoft Copilot Selected" });
-      bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft 365 Copilot", { parse_mode: "HTML" });
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: "📞 Microsoft Copilot Selected",
+      });
+      bot.sendMessage(
+        chatId,
+        "✅ <b>Product Set to:</b> Microsoft 365 Copilot",
+        { parse_mode: "HTML" },
+      );
     } else if (data === "select_teams") {
       const userConf = await getUserConfig(chatId);
-      userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
+      userConf.microsoftUrl =
+        "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
       userConf.updatedAt = new Date();
       await userConf.save();
-      bot.answerCallbackQuery(callbackQuery.id, { text: "📺 Microsoft Teams Room Selected" });
-      bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft Teams Rooms Basic", { parse_mode: "HTML" });
-    } else if (data === "delete_history") {
-      try {
-        await AccountHistory.deleteMany({ telegram_id: chatId.toString() });
-        bot.answerCallbackQuery(callbackQuery.id, { text: "History deleted." });
-        bot.sendMessage(chatId, "✅ <b>Your account history has been cleared.</b>", { parse_mode: "HTML" });
-      } catch (err) {
-        bot.sendMessage(chatId, `❌ Error deleting history: ${err.message}`);
-      }
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: "📺 Microsoft Teams Room Selected",
+      });
+      bot.sendMessage(
+        chatId,
+        "✅ <b>Product Set to:</b> Microsoft Teams Rooms Basic",
+        { parse_mode: "HTML" },
+      );
     }
   });
 
@@ -407,7 +445,11 @@ function initializeBotHandlers(bot) {
         }
       }
       if (added > 0) {
-        bot.sendMessage(chatId, `Successfully added ${added} accounts.`, mainMenu);
+        bot.sendMessage(
+          chatId,
+          `Successfully added ${added} accounts.`,
+          mainMenu,
+        );
         session.step = "IDLE";
       }
     } else if (session.step === "SET_CONCURRENCY") {
@@ -416,7 +458,11 @@ function initializeBotHandlers(bot) {
         const userConf = await getUserConfig(chatId);
         userConf.concurrencyLimit = num;
         await userConf.save();
-        bot.sendMessage(chatId, `Concurrency updated to ${num}. Bot will now open up to ${num} windows together with 5s delay.`, mainMenu);
+        bot.sendMessage(
+          chatId,
+          `Concurrency updated to ${num}. Bot will now open up to ${num} windows together with 5s delay.`,
+          mainMenu,
+        );
         session.step = "IDLE";
       }
     }
