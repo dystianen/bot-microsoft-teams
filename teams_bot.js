@@ -250,31 +250,35 @@ class TeamsBot {
               ),
             ];
             const el = candidates.find((b) => {
-              const text = (
-                b.textContent ||
-                b.getAttribute("aria-label") ||
-                b.value ||
-                ""
-              )
-                .trim()
-                .toLowerCase();
+              const textContent = (b.textContent || "").trim().toLowerCase();
+              const ariaLabel = (b.getAttribute("aria-label") || "").trim().toLowerCase();
+              const val = (b.value || "").trim().toLowerCase();
+              const titleMsg = (b.getAttribute("title") || "").trim().toLowerCase();
+
               const isVisible = !!(
                 b.offsetWidth ||
                 b.offsetHeight ||
                 b.getClientRects().length
               );
-              return (
-                text.length > 0 &&
-                text.length < 35 &&
-                kws.some((kw) => text.includes(kw)) &&
-                isVisible
+
+              const isMatch = kws.some(
+                (kw) =>
+                  textContent.includes(kw) ||
+                  ariaLabel.includes(kw) ||
+                  val.includes(kw) ||
+                  titleMsg.includes(kw)
               );
+
+              // Limit length to avoid clicking huge buttons accidentally
+              const btnLength = Math.max(textContent.length, ariaLabel.length, val.length, titleMsg.length);
+
+              return isVisible && isMatch && btnLength > 0 && btnLength < 35;
             });
             if (!el) return null;
             el.click();
             return (
-              el.textContent ||
               el.getAttribute("aria-label") ||
+              el.textContent ||
               el.value ||
               "button"
             ).trim();
@@ -823,10 +827,10 @@ class TeamsBot {
         await teamsSignInBtn.click();
         await teamsPage.waitForTimeout(5000);
       } catch (err) {
-        if (err.message === "dont have permission") {
+        if (err.message === "Don't have the required permissions to access this org") {
           throw err;
         }
-        throw new Error("Gagal menemukan tombol 'Sign in' di Teams.");
+        console.log("[INFO] 'Sign in' button not found or already signed in Teams. Continuing...");
       }
 
       // 23. Menunggu start trial muncul lalu click
@@ -842,7 +846,7 @@ class TeamsBot {
         await teamsPage.waitForTimeout(5000);
         await this.waitForSpinnerGone(30000);
       } catch (err) {
-        throw new Error("Gagal menemukan tombol 'Start trial' di Teams.");
+        console.warn("[WARN] 'Start trial' button not found in Teams. Continuing...");
       }
 
       // Close the teams tab after trial
