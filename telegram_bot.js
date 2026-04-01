@@ -301,17 +301,17 @@ function initializeBotHandlers(bot) {
       );
     } else if (data === "select_copilot") {
       const userConf = await getUserConfig(chatId);
-      userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-365-phone-system/CFQ7TTC0LF8S";
+      userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-365-copilot/CFQ7TTC0MM8R";
       userConf.updatedAt = new Date();
       await userConf.save();
-      bot.answerCallbackQuery(callbackQuery.id, { text: "📞 Phone System Selected" });
-      bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft 365 Phone System", { parse_mode: "HTML" });
+      bot.answerCallbackQuery(callbackQuery.id, { text: "📞 Microsoft Copilot Selected" });
+      bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft 365 Copilot", { parse_mode: "HTML" });
     } else if (data === "select_teams") {
       const userConf = await getUserConfig(chatId);
       userConf.microsoftUrl = "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
       userConf.updatedAt = new Date();
       await userConf.save();
-      bot.answerCallbackQuery(callbackQuery.id, { text: "📺 Teams Room Selected" });
+      bot.answerCallbackQuery(callbackQuery.id, { text: "📺 Microsoft Teams Room Selected" });
       bot.sendMessage(chatId, "✅ <b>Product Set to:</b> Microsoft Teams Rooms Basic", { parse_mode: "HTML" });
     }
   });

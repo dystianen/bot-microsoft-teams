@@ -2,7 +2,8 @@ const { chromium } = require("playwright-core");
 const fs = require("fs");
 const config = require("./config");
 
-const SPINNER_SELECTOR = '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
+const SPINNER_SELECTOR =
+  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
 const HARD_TIMEOUT = 1.5 * 60 * 1000;
 
 class TeamsBot {
@@ -20,7 +21,10 @@ class TeamsBot {
   }
 
   async randomMouseMove() {
-    const { width, height } = this.page.viewportSize() || { width: 1280, height: 720 };
+    const { width, height } = this.page.viewportSize() || {
+      width: 1280,
+      height: 720,
+    };
     const x = Math.floor(Math.random() * width);
     const y = Math.floor(Math.random() * height);
     await this.page.mouse.move(x, y, { steps: 10 });
@@ -32,7 +36,9 @@ class TeamsBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        await this.page.waitForTimeout(2000).catch(() => { isDone = true; });
+        await this.page.waitForTimeout(2000).catch(() => {
+          isDone = true;
+        });
         if (isDone) break;
 
         const detectedError = await this.checkForError();
@@ -44,10 +50,7 @@ class TeamsBot {
       }
     };
 
-    const result = await Promise.race([
-      promise, 
-      checkLoop()
-    ]).finally(() => {
+    const result = await Promise.race([promise, checkLoop()]).finally(() => {
       isDone = true;
     });
 
@@ -61,7 +64,9 @@ class TeamsBot {
   async checkForError() {
     try {
       // 1. Cek pesan error validasi di field
-      const fieldError = this.page.locator('[data-automation-id="error-message"], [id*="error" i]').first();
+      const fieldError = this.page
+        .locator('[data-automation-id="error-message"], [id*="error" i]')
+        .first();
       if (await fieldError.isVisible().catch(() => false)) {
         const msg = (await fieldError.textContent().catch(() => "")).trim();
         if (msg) return `Field Error: ${msg}`;
@@ -83,15 +88,21 @@ class TeamsBot {
 
       for (const frame of this.page.frames()) {
         try {
-          const frameText = await frame.innerText('body').catch(() => "");
+          const frameText = await frame.innerText("body").catch(() => "");
           const lowerFrameText = frameText.toLowerCase();
-          const found = markers.find(m => lowerFrameText.includes(m.toLowerCase()));
+          const found = markers.find((m) =>
+            lowerFrameText.includes(m.toLowerCase()),
+          );
           if (found) {
             return `Marker "${found}" detected in frame.`;
           }
-        } catch (e) { /* skip inaccessible frames */ }
+        } catch (e) {
+          /* skip inaccessible frames */
+        }
       }
-    } catch (err) { /* ignore */ }
+    } catch (err) {
+      /* ignore */
+    }
     return null;
   }
 
@@ -106,7 +117,9 @@ class TeamsBot {
           spinner.waitFor({ state: "hidden", timeout: HARD_TIMEOUT }),
         );
       } catch (e) {
-        console.log("[WAIT] Spinner still visible or check failed, continuing...");
+        console.log(
+          "[WAIT] Spinner still visible or check failed, continuing...",
+        );
       }
       console.log("[WAIT] Spinner gone.");
     }
@@ -132,10 +145,25 @@ class TeamsBot {
     for (const frame of this.page.frames()) {
       try {
         const found = await frame.evaluate((keywords) => {
-          const candidates = [...document.querySelectorAll('button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]')];
+          const candidates = [
+            ...document.querySelectorAll(
+              'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]',
+            ),
+          ];
           const el = candidates.find((b) => {
-            const text = (b.textContent || b.value || b.getAttribute("aria-label") || "").trim().toLowerCase();
-            return text.length > 0 && text.length < 60 && keywords.some((kw) => text.includes(kw));
+            const text = (
+              b.textContent ||
+              b.value ||
+              b.getAttribute("aria-label") ||
+              ""
+            )
+              .trim()
+              .toLowerCase();
+            return (
+              text.length > 0 &&
+              text.length < 60 &&
+              keywords.some((kw) => text.includes(kw))
+            );
           });
           if (!el) return null;
           el.click();
@@ -143,24 +171,46 @@ class TeamsBot {
         }, uniqueKeywords);
 
         if (found) {
-          console.log(`[INFO] Clicked: "${found}" (in frame: ${frame.url() === this.page.url() ? "main" : "subframe"})`);
+          console.log(
+            `[INFO] Clicked: "${found}" (in frame: ${frame.url() === this.page.url() ? "main" : "subframe"})`,
+          );
           return true;
         }
       } catch (e) {}
     }
 
     // 2. Fallback: Playwright native click di Main Page & Semua Frames
-    console.log(`[INFO] Fallback to Playwright click for names: ${names.join(", ")}`);
-    const pattern = new RegExp(names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*")).join("|"), "i");
+    console.log(
+      `[INFO] Fallback to Playwright click for names: ${names.join(", ")}`,
+    );
+    const pattern = new RegExp(
+      names
+        .map((n) =>
+          n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*"),
+        )
+        .join("|"),
+      "i",
+    );
 
     for (const frame of this.page.frames()) {
       try {
         const button = frame.getByRole("button", { name: pattern }).first();
         if (await button.isVisible({ timeout: 2000 }).catch(() => false)) {
           await this.randomMouseMove();
-          const clickedText = await button.evaluate(el => (el.textContent || el.value || el.getAttribute("aria-label") || "").trim()).catch(() => "unknown");
+          const clickedText = await button
+            .evaluate((el) =>
+              (
+                el.textContent ||
+                el.value ||
+                el.getAttribute("aria-label") ||
+                ""
+              ).trim(),
+            )
+            .catch(() => "unknown");
           await button.click({ timeout: 5000, force: true });
-          console.log(`[INFO] Clicked: "${clickedText || "unknown"}" (native, in frame)`);
+          console.log(
+            `[INFO] Clicked: "${clickedText || "unknown"}" (native, in frame)`,
+          );
           return true;
         }
       } catch (e) {}
@@ -172,7 +222,17 @@ class TeamsBot {
 
   async handlePopups() {
     console.log("[INFO] Checking for any popups to dismiss...");
-    const names = ["Close", "Dismiss", "Maybe later", "Got it", "No thanks", "Tutup", "Lain kali", "Selesai", "X"];
+    const names = [
+      "Close",
+      "Dismiss",
+      "Maybe later",
+      "Got it",
+      "No thanks",
+      "Tutup",
+      "Lain kali",
+      "Selesai",
+      "X",
+    ];
     const keywords = names.flatMap((n) => n.trim().toLowerCase().split(/\s+/));
 
     let foundSomethingVisible = true;
@@ -180,23 +240,50 @@ class TeamsBot {
     while (foundSomethingVisible && attempts < 3) {
       foundSomethingVisible = false;
       attempts++;
-      
+
       for (const frame of this.page.frames()) {
         try {
           const foundName = await frame.evaluate((kws) => {
-            const candidates = [...document.querySelectorAll('button, [role="button"], a[role="button"], input[type="button"]')];
+            const candidates = [
+              ...document.querySelectorAll(
+                'button, [role="button"], a[role="button"], input[type="button"]',
+              ),
+            ];
             const el = candidates.find((b) => {
-              const text = (b.textContent || b.getAttribute("aria-label") || b.value || "").trim().toLowerCase();
-              const isVisible = !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length);
-              return text.length > 0 && text.length < 35 && kws.some((kw) => text.includes(kw)) && isVisible;
+              const text = (
+                b.textContent ||
+                b.getAttribute("aria-label") ||
+                b.value ||
+                ""
+              )
+                .trim()
+                .toLowerCase();
+              const isVisible = !!(
+                b.offsetWidth ||
+                b.offsetHeight ||
+                b.getClientRects().length
+              );
+              return (
+                text.length > 0 &&
+                text.length < 35 &&
+                kws.some((kw) => text.includes(kw)) &&
+                isVisible
+              );
             });
             if (!el) return null;
             el.click();
-            return (el.textContent || el.getAttribute("aria-label") || el.value || "button").trim();
+            return (
+              el.textContent ||
+              el.getAttribute("aria-label") ||
+              el.value ||
+              "button"
+            ).trim();
           }, keywords);
 
           if (foundName) {
-            console.log(`[INFO] Dismissed popup button: "${foundName}" (Attempt ${attempts})`);
+            console.log(
+              `[INFO] Dismissed popup button: "${foundName}" (Attempt ${attempts})`,
+            );
             await this.humanDelay(1000, 2000);
             foundSomethingVisible = true;
             break; // Break the frame loop to start over from attempt
@@ -208,7 +295,9 @@ class TeamsBot {
 
   getGenericLocator(keyword, elementType = "input") {
     return this.page
-      .locator(`${elementType}[id*="${keyword}" i], ${elementType}[data-testid*="${keyword}" i], ${elementType}[name*="${keyword}" i], ${elementType}[aria-label*="${keyword}" i]`)
+      .locator(
+        `${elementType}[id*="${keyword}" i], ${elementType}[data-testid*="${keyword}" i], ${elementType}[name*="${keyword}" i], ${elementType}[aria-label*="${keyword}" i]`,
+      )
       .first();
   }
 
@@ -217,12 +306,13 @@ class TeamsBot {
       console.log("[STEP 1] Connecting to browser via Ads Power...");
       this.browser = await chromium.connectOverCDP(this.wsUrl);
       const contexts = this.browser.contexts();
-      this.context = contexts.length > 0 ? contexts[0] : await this.browser.newContext();
+      this.context =
+        contexts.length > 0 ? contexts[0] : await this.browser.newContext();
     } else {
       console.log("[STEP 1] Launching local browser in incognito mode...");
-      this.browser = await chromium.launch({ 
+      this.browser = await chromium.launch({
         headless: config.headless,
-        args: ["--incognito", "--disable-blink-features=AutomationControlled"]
+        args: ["--incognito", "--disable-blink-features=AutomationControlled"],
       });
       this.context = await this.browser.newContext();
     }
@@ -234,10 +324,13 @@ class TeamsBot {
     try {
       await this.connect();
       let uncheckedLicenses = [];
-      
+
       // 2. buka https://admin.microsoft.com/
       console.log("[STEP 2] Opening https://admin.microsoft.com/...");
-      await this.page.goto("https://admin.microsoft.com/", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      await this.page.goto("https://admin.microsoft.com/", {
+        waitUntil: "domcontentloaded",
+        timeout: HARD_TIMEOUT,
+      });
       await this.waitForSpinnerGone();
 
       // 3. masukin email click next
@@ -247,18 +340,32 @@ class TeamsBot {
       await this.waitForVisible(emailInput);
       await emailInput.fill(email);
       await this.humanDelay(500, 1000);
-      await this.clickButtonWithPossibleNames(["Next", "Selanjutnya", "Berikutnya"]);
+      await this.clickButtonWithPossibleNames([
+        "Next",
+        "Selanjutnya",
+        "Berikutnya",
+      ]);
 
       // 3.5 Handle "Choose a way to sign in" if it appears
-      console.log("[STEP 3.5] Checking for 'Choose a way to sign in' prompt...");
-      const usePasswordPrompt = this.page.locator('div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password")').first();
+      console.log(
+        "[STEP 3.5] Checking for 'Choose a way to sign in' prompt...",
+      );
+      const usePasswordPrompt = this.page
+        .locator(
+          'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password")',
+        )
+        .first();
       try {
         await usePasswordPrompt.waitFor({ state: "visible", timeout: 5000 });
-        console.log("[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...");
+        console.log(
+          "[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...",
+        );
         await usePasswordPrompt.click();
         await this.humanDelay(1000, 2000);
       } catch (e) {
-        console.log("[INFO] No 'Choose a way to sign in' prompt found, continuing...");
+        console.log(
+          "[INFO] No 'Choose a way to sign in' prompt found, continuing...",
+        );
       }
 
       // 4. masukin password
@@ -271,12 +378,17 @@ class TeamsBot {
       await this.clickButtonWithPossibleNames(["Sign in", "Masuk"]);
 
       // 5. Handling after Password (Robust State Monitoring)
-      console.log("[STEP 5] Waiting for Dashboard or login prompts (KMSI/MFA)...");
-      
-      const dashboardMarker = this.page.locator('[data-hint="ReactLeftNav"], #admin-home-container').first();
+      console.log(
+        "[STEP 5] Waiting for Dashboard or login prompts (KMSI/MFA)...",
+      );
+
+      const dashboardMarker = this.page
+        .locator('[data-hint="ReactLeftNav"], #admin-home-container')
+        .first();
       const loginLoopStart = Date.now();
-      
-      while (Date.now() - loginLoopStart < 120000) { // Max 2 menit menunggu dashboard
+
+      while (Date.now() - loginLoopStart < 120000) {
+        // Max 2 menit menunggu dashboard
         // 5.1 Cek apakah sudah sampai Dashboard?
         if (await dashboardMarker.isVisible().catch(() => false)) {
           console.log("[SUCCESS] Dashboard detected!");
@@ -286,7 +398,9 @@ class TeamsBot {
         }
 
         // 5.2 Cek rintangan: Stay signed in
-        const yesBtn = this.page.locator('button:has-text("Yes"), input[value="Yes"], #idSIButton9').first();
+        const yesBtn = this.page
+          .locator('button:has-text("Yes"), input[value="Yes"], #idSIButton9')
+          .first();
         if (await yesBtn.isVisible().catch(() => false)) {
           console.log("[INFO] Handling 'Stay signed in'...");
           await yesBtn.click();
@@ -295,7 +409,11 @@ class TeamsBot {
         }
 
         // 5.3 Cek rintangan: MFA Skip
-        const skipBtn = this.page.locator('a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton').first();
+        const skipBtn = this.page
+          .locator(
+            'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton',
+          )
+          .first();
         if (await skipBtn.isVisible().catch(() => false)) {
           console.log("[INFO] Handling MFA 'Skip for now'...");
           await skipBtn.click();
@@ -304,7 +422,11 @@ class TeamsBot {
         }
 
         // 5.4 Cek rintangan: Choose Account / Use Password
-        const usePass = this.page.locator('text=Use my password, text=Gunakan kata sandi saya, #allowInterrupt').first();
+        const usePass = this.page
+          .locator(
+            "text=Use my password, text=Gunakan kata sandi saya, #allowInterrupt",
+          )
+          .first();
         if (await usePass.isVisible().catch(() => false)) {
           console.log("[INFO] Handling 'Use my password' prompt...");
           await usePass.click();
@@ -321,21 +443,29 @@ class TeamsBot {
 
       // Verifikasi akhir sebelum lanjut ke Step 6
       if (!(await dashboardMarker.isVisible().catch(() => false))) {
-        throw new Error("Login failed: Dashboard not reached within 2 minutes.");
+        throw new Error(
+          "Login failed: Dashboard not reached within 2 minutes.",
+        );
       }
 
       // 6. select menu users (collapse dia)
       console.log("[STEP 6] Selecting 'Users' menu...");
-      
+
       await this.waitForSpinnerGone(1000);
       await this.handlePopups(); // One more check before interacting
-      const navLocator = this.page.locator('[data-hint="ReactLeftNav"]').first();
+      const navLocator = this.page
+        .locator('[data-hint="ReactLeftNav"]')
+        .first();
       await this.waitForVisible(navLocator);
       await this.humanDelay(1000, 2000);
 
-      const usersMenu = this.page.locator('button[data-automation-id="LeftNavusersnodeNavToggler"], button[name="Users"], button:has-text("Users")').first();
+      const usersMenu = this.page
+        .locator(
+          'button[data-automation-id="LeftNavusersnodeNavToggler"], button[name="Users"], button:has-text("Users")',
+        )
+        .first();
       await this.waitForVisible(usersMenu);
-      
+
       // Check if it's already expanded. If aria-expanded is 'true', don't click it again to collapse it.
       const isExpanded = await usersMenu.getAttribute("aria-expanded");
       if (isExpanded !== "true") {
@@ -348,134 +478,195 @@ class TeamsBot {
 
       // 7. terus pilih activer users
       console.log("[STEP 7] Selecting 'Active users'...");
-      const activeUsersLink = this.page.locator('a[data-automation-id="LeftNavactiveusersnodeNavToggler"], a:has-text("Active users"), a:has-text("Pengguna aktif")').first();
+      const activeUsersLink = this.page
+        .locator(
+          'a[data-automation-id="LeftNavactiveusersnodeNavToggler"], a:has-text("Active users"), a:has-text("Pengguna aktif")',
+        )
+        .first();
       await this.waitForVisible(activeUsersLink);
       await activeUsersLink.click();
-      
+
       console.log("[INFO] Waiting for Active users list to appear...");
       await this.waitForSpinnerGone(1000);
 
       // 8. Search account by email in the user list and select
       const fullEmail = this.accountConfig.microsoftAccount.email;
       console.log(`[STEP 8] Searching for user: ${fullEmail}...`);
-      
-      const searchInput = this.page.locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]').first();
+
+      const searchInput = this.page
+        .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
+        .first();
       await this.waitForVisible(searchInput);
       await searchInput.fill(fullEmail);
       await this.page.keyboard.press("Enter");
-      
+
       await this.waitForSpinnerGone(2000);
-      
-      const userRow = this.page.locator('div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button').first();
+
+      const userRow = this.page
+        .locator(
+          'div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button',
+        )
+        .first();
       await this.waitForVisible(userRow);
-      
+
       const nameFound = await userRow.textContent();
-      console.log(`[INFO] Clicking display name: "${nameFound?.trim()}" (Found after searching for ${fullEmail})`);
+      console.log(
+        `[INFO] Clicking display name: "${nameFound?.trim()}" (Found after searching for ${fullEmail})`,
+      );
       await userRow.click();
-      
+
       await this.humanDelay(2000, 3000);
 
       // 9. terus pilih yang licences dan apps
       console.log("[STEP 9] Selecting 'Licenses and apps' tab...");
-      const licensesTab = this.page.locator('button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")').first();
+      const licensesTab = this.page
+        .locator(
+          'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")',
+        )
+        .first();
       await this.waitForVisible(licensesTab);
       await licensesTab.click();
       await this.waitForSpinnerGone(2000);
 
       // 10. uncheck all checked checkboxes and remember them
-      console.log("[STEP 10] Unchecking all checked checkboxes and remembering them...");
+      console.log(
+        "[STEP 10] Unchecking all checked checkboxes and remembering them...",
+      );
       try {
         await this.page.waitForTimeout(2000); // Wait for load
         uncheckedLicenses = await this.page.evaluate(() => {
-          const checkboxes = [...document.querySelectorAll('input[type="checkbox"]')];
+          const checkboxes = [
+            ...document.querySelectorAll('input[type="checkbox"]'),
+          ];
           const results = [];
-          checkboxes.forEach(cb => {
+          checkboxes.forEach((cb) => {
             if (cb.checked) {
-              const labelText = (cb.getAttribute('aria-label') || cb.parentElement?.innerText || "").split('\n')[0].trim();
+              const labelText = (
+                cb.getAttribute("aria-label") ||
+                cb.parentElement?.innerText ||
+                ""
+              )
+                .split("\n")[0]
+                .trim();
               if (labelText) results.push(labelText);
               cb.click();
             }
           });
           return results;
         });
-        console.log(`[INFO] Unchecked and remembered: ${uncheckedLicenses.join(", ") || "None"}`);
+        console.log(
+          `[INFO] Unchecked and remembered: ${uncheckedLicenses.join(", ") || "None"}`,
+        );
       } catch (err) {
-        console.warn("[WARN] Failed to uncheck and remember checkboxes:", err.message);
+        console.warn(
+          "[WARN] Failed to uncheck and remember checkboxes:",
+          err.message,
+        );
       }
 
       await this.humanDelay(1000, 2000);
 
       // 11. terus saves changes
       console.log("[STEP 11] Clicking 'Save changes'...");
-      const saveBtn = this.page.locator('button:has-text("Save changes"), button[id*="save" i]').first();
+      const saveBtn = this.page
+        .locator('button:has-text("Save changes"), button[id*="save" i]')
+        .first();
       await this.waitForVisible(saveBtn);
       await saveBtn.click();
-      
+
       // Wait for completion message
       console.log("[INFO] Waiting for save completion...");
       await this.waitForSpinnerGone(3000);
       // 12. Navigating to product URL from config
-      const catalogUrl = this.accountConfig.productUrl || "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
+      const catalogUrl =
+        this.accountConfig.productUrl ||
+        "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
       const isTeamsRooms = catalogUrl.includes("microsoft-teams-rooms-basic");
       const isPhoneSystem = catalogUrl.includes("phone-system");
       const isCopilot = catalogUrl.includes("copilot");
-      
+
       let planName = "Microsoft 365 Copilot"; // Fallback
       if (isTeamsRooms) planName = "Microsoft Teams Rooms Basic";
       else if (isPhoneSystem) planName = "Microsoft 365 Phone System";
 
-      console.log(`[STEP 12] Navigating to Marketplace catalog: ${catalogUrl}... (Plan: ${planName})`);
-      await this.page.goto(catalogUrl, { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      console.log(
+        `[STEP 12] Navigating to Marketplace catalog: ${catalogUrl}... (Plan: ${planName})`,
+      );
+      await this.page.goto(catalogUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: HARD_TIMEOUT,
+      });
       await this.waitForSpinnerGone(3000);
 
       // Remaining steps will adapt based on the product defined above.
 
       // 15.5 Select a plan
       console.log(`[STEP 15.5] Selecting '${planName}' plan...`);
-      const planDropdown = this.page.locator('div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"]').first();
+      const planDropdown = this.page
+        .locator(
+          'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"]',
+        )
+        .first();
       await this.waitForVisible(planDropdown);
-      
+
       try {
-        const tagName = await planDropdown.evaluate(el => el.tagName.toLowerCase());
+        const tagName = await planDropdown.evaluate((el) =>
+          el.tagName.toLowerCase(),
+        );
         if (tagName === "select") {
           await planDropdown.selectOption({ label: planName });
         } else {
           await planDropdown.click();
           await this.humanDelay(1000, 1500);
-          const option = this.page.getByRole('option', {
-            name: new RegExp(`^${planName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i")
+          const option = this.page.getByRole("option", {
+            name: new RegExp(
+              `^${planName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+              "i",
+            ),
           });
           await option.click();
         }
       } catch (err) {
-        console.warn(`[WARN] Failed to select plan '${planName}' explicitly, it might be already selected. Continuing...`);
+        console.warn(
+          `[WARN] Failed to select plan '${planName}' explicitly, it might be already selected. Continuing...`,
+        );
       }
 
       // 15.7 Select '1 year' commitment if present (Only for Copilot)
       if (isCopilot) {
         console.log("[STEP 15.7] Selecting '1 year' commitment...");
         try {
-          const oneYearText = this.page.getByText('1 year', { exact: true }).first();
+          const oneYearText = this.page
+            .getByText("1 year", { exact: true })
+            .first();
           await oneYearText.waitFor({ state: "visible", timeout: 5000 });
           console.log("[INFO] '1 year' option found, clicking...");
           await oneYearText.click();
         } catch (e) {
-          console.log("[INFO] '1 year' option not found or already selected, continuing...");
+          console.log(
+            "[INFO] '1 year' option not found or already selected, continuing...",
+          );
         }
       } else {
-        console.log("[STEP 15.7] Skipping commitment selection for non-Copilot product.");
+        console.log(
+          "[STEP 15.7] Skipping commitment selection for non-Copilot product.",
+        );
       }
 
       // 16. Select 'Pay monthly'
       console.log("[STEP 16] Selecting 'Pay monthly' billing frequency...");
       try {
-        const payMonthlyText = this.page.getByText('Pay monthly', { exact: true }).first();
+        const payMonthlyText = this.page
+          .getByText("Pay monthly", { exact: true })
+          .first();
         await payMonthlyText.waitFor({ state: "visible", timeout: 5000 });
         console.log("[INFO] 'Pay monthly' option found, clicking...");
         await payMonthlyText.click();
         await this.waitForSpinnerGone(2000);
       } catch (e) {
-        console.log("[INFO] 'Pay monthly' option not found or already selected, continuing...");
+        console.log(
+          "[INFO] 'Pay monthly' option not found or already selected, continuing...",
+        );
       }
 
       // 17. Menunggu button buy muncul lalu click
@@ -483,34 +674,119 @@ class TeamsBot {
       const buyBtn = this.page.locator('button:has-text("Buy")').first();
       await this.waitForVisible(buyBtn);
       await buyBtn.click();
-      await this.waitForSpinnerGone(3000);
+      await this.waitForSpinnerGone(15000);
 
-      // 18. Muncul check box lalu check (OPTIONAL)
-      console.log("[STEP 18] Checking authorization checkbox if present...");
+      console.log("[STEP 18] Checking for authorization checkboxes...");
       try {
-        const authCheckbox = this.page.locator('input[type="checkbox"]').first();
-        const checkboxFound = await authCheckbox.waitFor({ state: "visible", timeout: 3000 }).then(() => true).catch(() => false);
-        
-        if (checkboxFound) {
-          const isAlreadyChecked = await authCheckbox.isChecked().catch(() => false);
-          if (!isAlreadyChecked) {
-            await authCheckbox.check({ force: true });
-            console.log("[INFO] Authorization checkbox checked.");
+        // Cari container .ms-Checkbox yang mengandung teks recurring payments
+        const checkboxContainer = this.page
+          .locator('.ms-Checkbox:has-text("authorize recurring payments")')
+          .first();
+
+        const isVisible = await checkboxContainer
+          .isVisible({ timeout: 10000 })
+          .catch(() => false);
+
+        if (isVisible) {
+          console.log(
+            "[INFO] Authorization checkbox detected. Attempting to check...",
+          );
+
+          // Ambil input langsung dari dalam container (sibling bisa diakses lewat parent)
+          const checkboxInput = checkboxContainer
+            .locator('input[type="checkbox"]')
+            .first();
+
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const isChecked = await checkboxInput
+              .isChecked()
+              .catch(() => false);
+            if (isChecked) {
+              console.log("[INFO] Checkbox is already checked.");
+              break;
+            }
+
+            console.log(`[INFO] Checking attempt ${attempt}...`);
+
+            // Klik langsung di visual checkbox (kotak kecilnya), bukan label teks
+            const visualCheckbox = checkboxContainer
+              .locator(".ms-Checkbox-checkbox")
+              .first();
+
+            await visualCheckbox.click({ force: true });
+            await this.page.waitForTimeout(1500);
+
+            const nowChecked = await checkboxInput
+              .isChecked()
+              .catch(() => false);
+            if (nowChecked) {
+              console.log("[SUCCESS] Checkbox is now checked.");
+              break;
+            }
+
+            // Fallback: klik via JavaScript langsung ke input
+            if (attempt === 2) {
+              console.log("[INFO] Fallback: clicking input directly via JS...");
+              await checkboxInput.evaluate((el) => el.click());
+              await this.page.waitForTimeout(1500);
+            }
+
+            if (attempt === 3) {
+              throw new Error(
+                "Gagal mencentang checkbox otorisasi setelah 3x percobaan.",
+              );
+            }
           }
         } else {
-          console.log("[INFO] No authorization checkbox found, proceeding to place order...");
+          console.log("[INFO] No authorization checkbox found, skipping...");
         }
       } catch (err) {
-        console.log("[INFO] Error handling checkbox, skipping...", err.message);
+        throw new Error(`CRITICAL_ERROR di Step 18: ${err.message}`);
       }
-      await this.humanDelay(1000, 2000);
 
-      // 19. Place order
+      // 19. Place order (STRICT MODE)
       console.log("[STEP 19] Clicking 'Place order'...");
-      const placeOrderBtn = this.page.locator('button:has-text("Place order")').first();
-      await this.waitForVisible(placeOrderBtn);
-      await placeOrderBtn.click();
-      
+      const placeOrderBtn = this.page
+        .locator('button:has-text("Place order")')
+        .first();
+
+      console.log(
+        "[INFO] Waiting for 'Place order' button to become enabled...",
+      );
+      let isBtnEnabled = false;
+      try {
+        await this.page.waitForFunction(
+          (btn) => {
+            return (
+              btn &&
+              !btn.disabled &&
+              btn.getAttribute("aria-disabled") !== "true" &&
+              !btn.classList.contains("is-disabled")
+            );
+          },
+          await placeOrderBtn.elementHandle(),
+          { timeout: 25000 },
+        );
+        isBtnEnabled = true;
+        console.log("[INFO] Button is now enabled.");
+      } catch (e) {
+        console.error(
+          "[ERROR] Tombol 'Place order' tetap disabled setelah 25 detik. Kemungkinan ada field yang belum terisi atau checkbox gagal.",
+        );
+        // JANGAN LANJUT jika button disabled
+        throw new Error(
+          "PLACE_ORDER_DISABLED: Tombol tidak aktif, proses dihentikan agar tidak membuka tab baru.",
+        );
+      }
+
+      if (isBtnEnabled) {
+        await placeOrderBtn.click({ timeout: 10000 }).catch(async (e) => {
+          console.log("[INFO] Click failed, trying force click...");
+          await placeOrderBtn.click({ force: true });
+        });
+        console.log("[SUCCESS] Order placed successfully.");
+      }
+
       // 20. Waiting spinner lagi
       console.log("[STEP 20] Waiting for spinner after placing order...");
       await this.waitForSpinnerGone(8000);
@@ -518,30 +794,45 @@ class TeamsBot {
       // 21. Buka https://teams.microsoft.com/v2/ di tab baru
       console.log("[STEP 21] Opening Teams in a new tab...");
       const teamsPage = await this.context.newPage();
-      await teamsPage.goto("https://teams.microsoft.com/v2/", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      await teamsPage.goto("https://teams.microsoft.com/v2/", {
+        waitUntil: "domcontentloaded",
+        timeout: HARD_TIMEOUT,
+      });
       await this.waitForSpinnerGone(); // Note: this waits for spinner in this.page, let's use a helper for teamsPage if needed
 
       // 22. Menunggu sampe button sign in muncul click
       console.log("[STEP 22] Waiting for 'Sign in' button in Teams...");
-      const teamsSignInBtn = teamsPage.locator('button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")').first();
+      const teamsSignInBtn = teamsPage
+        .locator(
+          'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")',
+        )
+        .first();
       try {
         await teamsSignInBtn.waitFor({ state: "visible", timeout: 30000 });
         await teamsSignInBtn.click();
         await teamsPage.waitForTimeout(5000);
       } catch (err) {
-        console.log("[INFO] 'Sign in' button not found or already signed in Teams. Continuing...");
+        console.log(
+          "[INFO] 'Sign in' button not found or already signed in Teams. Continuing...",
+        );
       }
 
       // 23. Menunggu start trial muncul lalu click
       console.log("[STEP 23] Waiting for 'Start trial' button in Teams...");
-      const startTrialBtn = teamsPage.locator('button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial")').first();
+      const startTrialBtn = teamsPage
+        .locator(
+          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial")',
+        )
+        .first();
       try {
         await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
         await startTrialBtn.click();
         await teamsPage.waitForTimeout(5000);
         await this.waitForSpinnerGone(15000);
       } catch (err) {
-        console.warn("[WARN] 'Start trial' button not found in Teams. Continuing...");
+        console.warn(
+          "[WARN] 'Start trial' button not found in Teams. Continuing...",
+        );
       }
 
       // Close the teams tab after trial
@@ -550,42 +841,64 @@ class TeamsBot {
       // 24. Balik lagi ke admin user (original tab)
       console.log("[STEP 24] Returning to Admin Center to restore license...");
       await this.page.bringToFront();
-      
+
       // Navigate back to Active Users
-      await this.page.goto("https://admin.microsoft.com/#/users", { waitUntil: "domcontentloaded", timeout: HARD_TIMEOUT });
+      await this.page.goto("https://admin.microsoft.com/#/users", {
+        waitUntil: "domcontentloaded",
+        timeout: HARD_TIMEOUT,
+      });
       await this.waitForSpinnerGone(3000);
 
       // 25. Search the same user again and select
       console.log(`[STEP 25] Re-searching for user: ${fullEmail}...`);
-      
-      const finalSearchInput = this.page.locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]').first();
+
+      const finalSearchInput = this.page
+        .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
+        .first();
       await this.waitForVisible(finalSearchInput);
       await finalSearchInput.fill(fullEmail);
       await this.page.keyboard.press("Enter");
-      
+
       await this.waitForSpinnerGone(2000);
-      
-      const finalUserRow = this.page.locator('div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button').first();
+
+      const finalUserRow = this.page
+        .locator(
+          'div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button',
+        )
+        .first();
       await this.waitForVisible(finalUserRow);
       await finalUserRow.click();
       await this.humanDelay(2000, 3000);
 
       // 26. Licenses and apps
       console.log("[STEP 26] Selecting 'Licenses and apps' tab...");
-      const finalLicensesTab = this.page.locator('button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")').first();
+      const finalLicensesTab = this.page
+        .locator(
+          'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps")',
+        )
+        .first();
       await this.waitForVisible(finalLicensesTab);
       await finalLicensesTab.click();
       await this.waitForSpinnerGone(2000);
 
       // 27. restore previously unchecked licenses
-      console.log("[STEP 27] Re-checking the previous licenses:", uncheckedLicenses.join(", "));
+      console.log(
+        "[STEP 27] Re-checking the previous licenses:",
+        uncheckedLicenses.join(", "),
+      );
       for (const licenseLabelText of uncheckedLicenses) {
         if (!licenseLabelText) continue;
         try {
           console.log(`[INFO] Restoring license: "${licenseLabelText}"...`);
-          const locator = this.page.locator(`input[type="checkbox"][aria-label*="${licenseLabelText}" i], label:has-text("${licenseLabelText}")`).first();
-          
-          await locator.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+          const locator = this.page
+            .locator(
+              `input[type="checkbox"][aria-label*="${licenseLabelText}" i], label:has-text("${licenseLabelText}")`,
+            )
+            .first();
+
+          await locator
+            .waitFor({ state: "visible", timeout: 5000 })
+            .catch(() => {});
           const isChecked = await locator.isChecked().catch(() => false);
           if (!isChecked) {
             await locator.check({ force: true }).catch(async () => {
@@ -593,7 +906,10 @@ class TeamsBot {
             });
           }
         } catch (err) {
-          console.warn(`[WARN] Failed to restore license "${licenseLabelText}":`, err.message);
+          console.warn(
+            `[WARN] Failed to restore license "${licenseLabelText}":`,
+            err.message,
+          );
         }
       }
 
@@ -601,14 +917,15 @@ class TeamsBot {
 
       // 28. Save changes
       console.log("[STEP 28] Clicking 'Save changes'...");
-      const finalSaveBtn = this.page.locator('button:has-text("Save changes"), button[id*="save" i]').first();
+      const finalSaveBtn = this.page
+        .locator('button:has-text("Save changes"), button[id*="save" i]')
+        .first();
       await this.waitForVisible(finalSaveBtn);
       await finalSaveBtn.click();
       await this.waitForSpinnerGone(5000);
 
       console.log("[SUCCESS] Automation finished successfully.");
       return { success: true };
-
     } catch (error) {
       console.error("[ERROR] Automation failed:", error.message);
       return { success: false, error: error.message };
