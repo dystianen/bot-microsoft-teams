@@ -891,7 +891,7 @@ class TeamsBot {
         )
         .first();
       try {
-        await startTrialBtn.waitFor({ state: "visible", timeout: 30000 });
+        await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
         await startTrialBtn.click();
         await teamsPage.waitForTimeout(5000);
       } catch (err) {
