@@ -1088,70 +1088,48 @@ class TeamsBot {
       await finalLicensesTab.click();
       await this.waitForSpinnerGone(2000);
 
-      // 27. restore all licenses (check all checkboxes)
+      // 27. restore specific license (Office 365 E3)
+      const targetSku = "6fd2c87f-b296-42f0-b197-1e91e994b900"; // Office 365 E3 SKU
       await remoteLogger.logStep(
         email,
         27,
-        "Re-checking all available checkboxes (Strict Verification)...",
+        "Ensuring 'Office 365 E3' license is checked (Strict Verification)...",
       );
       try {
         await this.waitForSpinnerGone(1000);
-        const checkboxSelector = 'input[type="checkbox"]';
-        await this.page
-          .locator(checkboxSelector)
-          .first()
-          .waitFor({ state: "visible", timeout: 15000 })
-          .catch(() => {});
-        await this.page.waitForTimeout(4000);
+        const targetCheckbox = this.page.locator(`input[data-automation-id*="${targetSku}"], input[value="${targetSku}"]`).first();
+        
+        await targetCheckbox.waitFor({ state: "visible", timeout: 15000 }).catch(() => {
+          throw new Error(`LICENSE_NOT_FOUND: 'Office 365 E3' checkbox not found on page.`);
+        });
 
         for (let attempt = 1; attempt <= 3; attempt++) {
           await this.waitForSpinnerGone(500);
-          const checkboxes = await this.page.locator(checkboxSelector).all();
-          let clickedCount = 0;
-
-          for (const cb of checkboxes) {
-            const isChecked = await cb.isChecked();
-            if (!isChecked) {
-              await cb.click({ force: true });
-              await this.page.waitForTimeout(400);
-              clickedCount++;
-            }
+          const isEnabled = await targetCheckbox.isChecked();
+          
+          if (!isEnabled) {
+            await remoteLogger.logStep(email, 27, `Attempt ${attempt}: Clicking 'Office 365 E3' checkbox.`);
+            await targetCheckbox.click({ force: true });
+            await this.page.waitForTimeout(1500);
           }
 
-          // Verifikasi akhir dalam loop
-          await this.page.waitForTimeout(2000);
-          const allCheckboxes = await this.page.locator(checkboxSelector).all();
-          let stillUnchecked = 0;
-          for (const cb of allCheckboxes) {
-            if (!(await cb.isChecked())) stillUnchecked++;
-          }
-
-          if (stillUnchecked === 0) {
-            console.log(
-              `[INFO] Step 27 Success: All checkboxes checked (Attempt ${attempt}).`,
-            );
+          // Verifikasi kembali status centangnya
+          const verifyChecked = await targetCheckbox.isChecked();
+          if (verifyChecked) {
+            await remoteLogger.logStep(email, 27, `Successfully verified 'Office 365 E3' is checked.`);
             break;
           } else {
-            console.warn(
-              `[WARN] Step 27 Attempt ${attempt}: ${stillUnchecked} still unchecked. Retrying...`,
-            );
+            await remoteLogger.logStep(email, 27, `Attempt ${attempt}: Still unchecked. Retrying...`);
             await this.waitForSpinnerGone(1000);
           }
 
-          if (attempt === 3 && stillUnchecked > 0) {
-            throw new Error(
-              `STRICT_CHECKBOX_FAILED: ${stillUnchecked} checkboxes still unchecked after 3 attempts.`,
-            );
+          if (attempt === 3 && !verifyChecked) {
+            throw new Error(`STRICT_CHECKBOX_FAILED: Failed to check 'Office 365 E3' license after 3 attempts.`);
           }
         }
-
-        console.log("[INFO] All checkboxes have been verified as checked.");
       } catch (err) {
-        console.warn(
-          "[WARN] Step 27 Checkbox verification error:",
-          err.message,
-        );
-        if (err.message.includes("STRICT_CHECKBOX_FAILED")) throw err;
+        await remoteLogger.logError(email, "Step 27 Failed (License Restore)", err.message);
+        throw err;
       }
       await this.humanDelay(1000, 2000);
 
