@@ -586,22 +586,34 @@ class TeamsBot {
         await this.page.locator(checkboxSelector).first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
         await this.page.waitForTimeout(3000); 
 
-        for (let attempt = 1; attempt <= 2; attempt++) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          await this.waitForSpinnerGone(1000);
           const checkboxes = await this.page.locator(checkboxSelector).all();
           let changed = 0;
           for (const cb of checkboxes) {
             if (await cb.isChecked()) {
               await cb.click({ force: true });
               changed++;
-              await this.page.waitForTimeout(200);
+              await this.page.waitForTimeout(300);
             }
           }
-          if (changed === 0) break;
-          await this.waitForSpinnerGone(1000);
+
+          // Verification
+          await this.page.waitForTimeout(2000);
+          const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
+          
+          if (remaining === 0) {
+            await remoteLogger.logStep(email, 10, `Successfully unchecked all checkboxes (Attempt ${attempt}).`);
+            break;
+          } else {
+            await remoteLogger.logStep(email, 10, `Attempt ${attempt}: ${remaining} checkboxes still checked. Retrying...`);
+            if (attempt === 3) throw new Error(`UNCHECK_ALL_FAILED: Still have ${remaining} checkboxes checked after 3 attempts.`);
+            await this.waitForSpinnerGone(2000);
+          }
         }
-        console.log("[INFO] All checked checkboxes have been unchecked.");
       } catch (err) {
-        console.warn("[WARN] Failed to uncheck checkboxes:", err.message);
+        await remoteLogger.logError(email, "Step 10 Failed (Uncheck All)", err.message);
+        throw err;
       }
 
       await this.humanDelay(1000, 2000);
@@ -994,8 +1006,23 @@ class TeamsBot {
         .first();
       try {
         await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
+        await remoteLogger.logStep(email, 23.5, "Clicking 'Start trial' button in Teams...");
         await startTrialBtn.click();
-        await teamsPage.waitForTimeout(5000);
+        
+        // Menunggu loading setelah klik start trial selesai sebelum close
+        await remoteLogger.logStep(email, 23.6, "Waiting for trial setup to complete (Loading)...");
+        await teamsPage.waitForTimeout(5000); // Penyangga awal
+        
+        // Mencari spinner di teamsPage
+        const teamsSpinner = teamsPage.locator(SPINNER_SELECTOR).first();
+        const isSpinning = await teamsSpinner.isVisible().catch(() => false);
+        if (isSpinning) {
+          await teamsSpinner.waitFor({ state: "hidden", timeout: 60000 }).catch(() => {
+            console.log("[WARN] Teams trial setup spinner still visible, continuing anyway.");
+          });
+        }
+        
+        await remoteLogger.logStep(email, 23.7, "Trial setup finished. Closing Teams tab.");
       } catch (err) {
         await teamsPage.close().catch(() => {});
         throw new Error(
