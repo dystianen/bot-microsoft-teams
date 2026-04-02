@@ -579,24 +579,26 @@ class TeamsBot {
       await this.waitForSpinnerGone(2000);
 
       // 10. uncheck all checked checkboxes
-      console.log("[STEP 10] Unchecking all checked checkboxes...");
+      await remoteLogger.logStep(email, 10, "Unchecking all checked checkboxes...");
       try {
-        await this.page
-          .locator('input[type="checkbox"]')
-          .first()
-          .waitFor({ state: "visible", timeout: 10000 })
-          .catch(() => {});
-        await this.page.waitForTimeout(3000); // Wait for load
-        await this.page.evaluate(() => {
-          const checkboxes = [
-            ...document.querySelectorAll('input[type="checkbox"]'),
-          ];
-          checkboxes.forEach((cb) => {
-            if (cb.checked) {
-              cb.click();
+        await this.waitForSpinnerGone(1000); // Ensure no spinner blocks the initial state
+        const checkboxSelector = 'input[type="checkbox"]';
+        await this.page.locator(checkboxSelector).first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+        await this.page.waitForTimeout(3000); 
+
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const checkboxes = await this.page.locator(checkboxSelector).all();
+          let changed = 0;
+          for (const cb of checkboxes) {
+            if (await cb.isChecked()) {
+              await cb.click({ force: true });
+              changed++;
+              await this.page.waitForTimeout(200);
             }
-          });
-        });
+          }
+          if (changed === 0) break;
+          await this.waitForSpinnerGone(1000);
+        }
         console.log("[INFO] All checked checkboxes have been unchecked.");
       } catch (err) {
         console.warn("[WARN] Failed to uncheck checkboxes:", err.message);
@@ -1066,52 +1068,52 @@ class TeamsBot {
         "Re-checking all available checkboxes (Strict Verification)...",
       );
       try {
+        await this.waitForSpinnerGone(1000);
+        const checkboxSelector = 'input[type="checkbox"]';
         await this.page
-          .locator('input[type="checkbox"]')
+          .locator(checkboxSelector)
           .first()
           .waitFor({ state: "visible", timeout: 15000 })
           .catch(() => {});
         await this.page.waitForTimeout(4000);
 
         for (let attempt = 1; attempt <= 3; attempt++) {
-          const checkboxes = await this.page
-            .locator('input[type="checkbox"]')
-            .all();
+          await this.waitForSpinnerGone(500);
+          const checkboxes = await this.page.locator(checkboxSelector).all();
           let clickedCount = 0;
 
           for (const cb of checkboxes) {
             const isChecked = await cb.isChecked();
             if (!isChecked) {
-              await cb.click();
-              await this.page.waitForTimeout(300);
+              await cb.click({ force: true });
+              await this.page.waitForTimeout(400);
               clickedCount++;
             }
           }
 
-          // Re-check after clicking
-          const allCheckboxes = await this.page
-            .locator('input[type="checkbox"]')
-            .all();
-          const uncheckedList = [];
+          // Verifikasi akhir dalam loop
+          await this.page.waitForTimeout(2000);
+          const allCheckboxes = await this.page.locator(checkboxSelector).all();
+          let stillUnchecked = 0;
           for (const cb of allCheckboxes) {
-            if (!(await cb.isChecked())) uncheckedList.push(cb);
+            if (!(await cb.isChecked())) stillUnchecked++;
           }
 
-          if (uncheckedList.length === 0) {
+          if (stillUnchecked === 0) {
             console.log(
               `[INFO] Step 27 Success: All checkboxes checked (Attempt ${attempt}).`,
             );
             break;
           } else {
             console.warn(
-              `[WARN] Step 27 Attempt ${attempt}: ${uncheckedList.length} still unchecked. Retrying...`,
+              `[WARN] Step 27 Attempt ${attempt}: ${stillUnchecked} still unchecked. Retrying...`,
             );
-            await this.page.waitForTimeout(2000);
+            await this.waitForSpinnerGone(1000);
           }
 
-          if (attempt === 3 && uncheckedList.length > 0) {
+          if (attempt === 3 && stillUnchecked > 0) {
             throw new Error(
-              `STRICT_CHECKBOX_FAILED: ${uncheckedList.length} checkboxes still unchecked after 3 attempts.`,
+              `STRICT_CHECKBOX_FAILED: ${stillUnchecked} checkboxes still unchecked after 3 attempts.`,
             );
           }
         }
