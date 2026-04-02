@@ -1,6 +1,5 @@
-const { chromium } = require("playwright-core");
-const fs = require("fs");
 const config = require("./config");
+const remoteLogger = require("./remote_logger");
 
 const SPINNER_SELECTOR =
   '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
@@ -341,8 +340,7 @@ class TeamsBot {
     try {
       await this.connect();
 
-      // 2. buka https://admin.microsoft.com/
-      console.log("[STEP 2] Opening https://admin.microsoft.com/...");
+      await remoteLogger.logStep(email, 2, "Opening https://admin.microsoft.com/...");
       await this.page.goto("https://admin.microsoft.com/", {
         waitUntil: "domcontentloaded",
         timeout: HARD_TIMEOUT,
@@ -351,7 +349,7 @@ class TeamsBot {
 
       // 3. masukin email click next
       const email = this.accountConfig.microsoftAccount.email;
-      console.log("[STEP 3] Entering email:", email);
+      await remoteLogger.logStep(email, 3, `Entering email: ${email}`);
       const emailInput = this.getGenericLocator("email");
       await this.waitForVisible(emailInput);
       await emailInput.fill(email);
@@ -386,7 +384,7 @@ class TeamsBot {
 
       // 4. masukin password
       const password = this.accountConfig.microsoftAccount.password;
-      console.log("[STEP 4] Entering password...");
+      await remoteLogger.logStep(email, 4, "Entering password...");
       const passwordInput = this.page.locator('input[type="password"]').first();
       await this.waitForVisible(passwordInput);
       await passwordInput.fill(password);
@@ -394,9 +392,7 @@ class TeamsBot {
       await this.clickButtonWithPossibleNames(["Sign in", "Masuk"]);
 
       // 5. Handling after Password (Robust State Monitoring)
-      console.log(
-        "[STEP 5] Waiting for Dashboard or login prompts (KMSI/MFA)...",
-      );
+      await remoteLogger.logStep(email, 5, "Waiting for Dashboard or login prompts (KMSI/MFA)...");
 
       const dashboardMarker = this.page
         .locator('[data-hint="ReactLeftNav"], #admin-home-container')
@@ -468,7 +464,7 @@ class TeamsBot {
       }
 
       // 6. select menu users (collapse dia)
-      console.log("[STEP 6] Selecting 'Users' menu...");
+      await remoteLogger.logStep(email, 6, "Selecting 'Users' menu...");
 
       await this.waitForSpinnerGone(1000);
       await this.handlePopups(); // One more check before interacting
@@ -496,7 +492,7 @@ class TeamsBot {
       }
 
       // 7. terus pilih activer users
-      console.log("[STEP 7] Selecting 'Active users'...");
+      await remoteLogger.logStep(email, 7, "Selecting 'Active users'...");
       const activeUsersLink = this.page
         .locator(
           'a[data-automation-id="LeftNavactiveusersnodeNavToggler"], a:has-text("Active users"), a:has-text("Pengguna aktif")',
@@ -510,7 +506,7 @@ class TeamsBot {
 
       // 8. Search account by email in the user list and select
       const fullEmail = this.accountConfig.microsoftAccount.email;
-      console.log(`[STEP 8] Searching for user: ${fullEmail}...`);
+      await remoteLogger.logStep(email, 8, `Searching for user: ${fullEmail}...`);
 
       const searchInput = this.page
         .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
@@ -537,7 +533,7 @@ class TeamsBot {
       await this.humanDelay(2000, 3000);
 
       // 9. terus pilih yang licences dan apps
-      console.log("[STEP 9] Selecting 'Licenses and apps' tab...");
+      await remoteLogger.logStep(email, 9, "Selecting 'Licenses and apps' tab...");
       const licensesTab = this.page
         .locator(
           'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi")',
@@ -575,7 +571,7 @@ class TeamsBot {
       await this.humanDelay(1000, 2000);
 
       // 11. terus saves changes
-      console.log("[STEP 11] Clicking 'Save changes'...");
+      await remoteLogger.logStep(email, 11, "Clicking 'Save changes'...");
       const saveBtn = this.page
         .locator('button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")')
         .first();
@@ -599,9 +595,7 @@ class TeamsBot {
       else if (isPhoneSystem) planName = "Microsoft 365 Phone System";
       else if (isBusinessAppsFree) planName = "Business Apps (free)";
 
-      console.log(
-        `[STEP 12] Navigating to Marketplace catalog: ${catalogUrl}... (Plan: ${planName})`,
-      );
+      await remoteLogger.logStep(email, 12, `Navigating to Marketplace catalog... (Plan: ${planName})`);
       await this.page.goto(catalogUrl, {
         waitUntil: "commit",
         timeout: HARD_TIMEOUT,
@@ -700,7 +694,7 @@ class TeamsBot {
       }
 
       // 17. Menunggu button buy muncul lalu click
-      console.log("[STEP 17] Waiting for 'Buy' button and clicking...");
+      await remoteLogger.logStep(email, 17, "Waiting for 'Buy' button and clicking...");
       const buyBtn = this.page.locator('button:has-text("Buy"), button:has-text("Beli")').first();
       await this.waitForVisible(buyBtn);
       await buyBtn.click();
@@ -775,7 +769,7 @@ class TeamsBot {
       }
 
       // 19. Place order (STRICT MODE)
-      console.log("[STEP 19] Clicking 'Place order'...");
+      await remoteLogger.logStep(email, 19, "Clicking 'Place order'...");
       const placeOrderBtn = this.page
         .locator('button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan")')
         .first();
@@ -810,7 +804,7 @@ class TeamsBot {
       console.log("[INFO] 'Place order' clicked. Waiting for confirmation...");
 
       // 20. Verifikasi Transaksi Berhasil (STRICT)
-      console.log("[STEP 20] Verifying order success before proceeding...");
+      await remoteLogger.logStep(email, 20, "Verifying order success before proceeding...");
       let isSuccess = false;
       const verifyStart = Date.now();
 
@@ -846,7 +840,7 @@ class TeamsBot {
       await this.waitForSpinnerGone(5000);
 
       // 21. Buka https://teams.microsoft.com/v2/ di tab baru
-      console.log("[STEP 21] Opening Teams in a new tab...");
+      await remoteLogger.logStep(email, 21, "Opening Teams in a new tab...");
       const teamsPage = await this.context.newPage();
       await teamsPage.goto("https://teams.microsoft.com/v2/", {
         waitUntil: "domcontentloaded",
@@ -855,7 +849,7 @@ class TeamsBot {
       await this.waitForSpinnerGone(); // Note: this waits for spinner in this.page, let's use a helper for teamsPage if needed
 
       // 22. Menunggu sampe button sign in muncul click
-      console.log("[STEP 22] Waiting for 'Sign in' button or Permission Error in Teams...");
+      await remoteLogger.logStep(email, 22, "Waiting for 'Sign in' button or Permission Error in Teams...");
       const teamsSignInBtn = teamsPage
         .locator(
           'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")',
@@ -911,7 +905,7 @@ class TeamsBot {
       await teamsPage.close().catch(() => { });
 
       // 24. Balik lagi ke admin user (original tab)
-      console.log("[STEP 24] Returning to Admin Center to restore license...");
+      await remoteLogger.logStep(email, 24, "Returning to Admin Center to restore license...");
       await this.page.bringToFront();
 
       // Navigate back to Active Users
@@ -922,7 +916,7 @@ class TeamsBot {
       await this.waitForSpinnerGone(3000);
 
       // 25. Search the same user again and select
-      console.log(`[STEP 25] Re-searching for user: ${fullEmail}...`);
+      await remoteLogger.logStep(email, 25, `Re-searching for user: ${fullEmail}...`);
 
       const finalSearchInput = this.page
         .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
@@ -943,7 +937,7 @@ class TeamsBot {
       await this.humanDelay(2000, 3000);
 
       // 26. Licenses and apps
-      console.log("[STEP 26] Selecting 'Licenses and apps' tab...");
+      await remoteLogger.logStep(email, 26, "Selecting 'Licenses and apps' tab...");
       const finalLicensesTab = this.page
         .locator(
           'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi")',
@@ -976,7 +970,7 @@ class TeamsBot {
       await this.humanDelay(1000, 2000);
 
       // 28. Save changes
-      console.log("[STEP 28] Clicking 'Save changes'...");
+      await remoteLogger.logStep(email, 28, "Clicking 'Save changes'...");
       const finalSaveBtn = this.page
         .locator('button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")')
         .first();
@@ -984,10 +978,10 @@ class TeamsBot {
       await finalSaveBtn.click();
       await this.waitForSpinnerGone(5000);
 
-      console.log("[SUCCESS] Automation finished successfully.");
+      await remoteLogger.logSuccess(email, "Automation finished successfully.");
       return { success: true };
     } catch (error) {
-      console.error("[ERROR] Automation failed:", error.message);
+      await remoteLogger.logError(this.accountConfig?.microsoftAccount?.email, "Automation failed", error.message);
       return { success: false, error: error.message };
     }
   }

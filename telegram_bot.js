@@ -4,6 +4,7 @@ const { processSingleAccount } = require("./index");
 const connectDB = require("./db");
 const { AccountHistory, UserConfig } = require("./models");
 const date = require("date-and-time");
+const remoteLogger = require("./remote_logger");
 
 // Wrap in an async function to allow awaiting connection
 async function startBot() {
@@ -152,6 +153,8 @@ function initializeBotHandlers(bot) {
     const userConf = await getUserConfig(chatId);
     session.running = true;
 
+    await remoteLogger.reportSystemStatus(`(Queue Start - ${session.accounts.length} accts)`);
+
     bot.sendMessage(
       chatId,
       `🚀 Starting batch for ${session.accounts.length} accounts...\n(Launching every 5 seconds, max ${userConf.concurrencyLimit} active windows)`,
@@ -269,6 +272,7 @@ function initializeBotHandlers(bot) {
             mainMenu,
           );
         } else {
+          await remoteLogger.reportSystemStatus("(Queue Finished)");
           bot.sendMessage(
             chatId,
             "🏁 Finished processing session accounts.",

@@ -4,6 +4,7 @@ dotenv.config();
 module.exports = {
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN,
+    logChatId: process.env.TELEGRAM_LOG_CHAT_ID,
   },
   headless: process.env.HEADLESS === "true",
 };
