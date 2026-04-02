@@ -302,19 +302,38 @@ function initializeBotHandlers(bot) {
         return bot.sendMessage(chatId, "📭 No history found.");
       }
 
+      const successRecords = records.filter((r) => r.status === "SUCCESS");
+      const failedRecords = records.filter((r) => r.status !== "SUCCESS");
+
       let message = "📜 <b>Recent Account History (Last 10):</b>\n\n";
-      records.forEach((rec, idx) => {
-        const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
-        const timeStr = date.format(dateWib, "DD/MM HH:mm");
-        const statusIcon = rec.status === "SUCCESS" ? "✅" : "❌";
-        message += `${idx + 1}. ${statusIcon} <code>${timeStr}</code>\n`;
-        message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
-        message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
-        if (rec.status === "FAILED") {
+      
+      let counter = 1;
+      
+      if (successRecords.length > 0) {
+        message += "🟢 <b>SUCCESS:</b>\n";
+        successRecords.forEach((rec) => {
+          const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
+          const timeStr = date.format(dateWib, "DD/MM HH:mm");
+          message += `${counter++}. ✅ <code>${timeStr}</code>\n`;
+          message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
+          message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
+          message += "────────────────\n";
+        });
+        message += "\n";
+      }
+
+      if (failedRecords.length > 0) {
+        message += "🔴 <b>FAILED:</b>\n";
+        failedRecords.forEach((rec) => {
+          const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
+          const timeStr = date.format(dateWib, "DD/MM HH:mm");
+          message += `${counter++}. ❌ <code>${timeStr}</code>\n`;
+          message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
+          message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
           message += `⚠️ Log: ${escapeHTML(rec.log || "No log")}\n`;
-        }
-        message += "────────────────\n";
-      });
+          message += "────────────────\n";
+        });
+      }
 
       bot.sendMessage(chatId, message, { parse_mode: "HTML" });
     } catch (err) {
