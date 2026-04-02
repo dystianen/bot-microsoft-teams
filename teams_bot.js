@@ -1,3 +1,4 @@
+const { chromium } = require("playwright-core");
 const config = require("./config");
 const remoteLogger = require("./remote_logger");
 
