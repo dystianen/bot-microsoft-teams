@@ -659,6 +659,20 @@ class TeamsBot {
             "[INFO] '1 year' option not found or already selected, continuing...",
           );
         }
+      } else if (isBusinessAppsFree) {
+        console.log("[STEP 15.7] Selecting '1 month' commitment...");
+        try {
+          const oneMonthText = this.page
+            .locator(':text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")')
+            .first();
+          await oneMonthText.waitFor({ state: "visible", timeout: 5000 });
+          console.log("[INFO] '1 month' option found, clicking...");
+          await oneMonthText.click();
+        } catch (e) {
+          console.log(
+            "[INFO] '1 month' option not found or already selected, continuing...",
+          );
+        }
       } else {
         console.log(
           "[STEP 15.7] Skipping commitment selection for non-Copilot product.",
