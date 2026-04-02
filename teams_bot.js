@@ -417,7 +417,10 @@ class TeamsBot {
           continue;
         }
 
-        // 5.3 Cek rintangan: MFA Skip
+        // 5.3 Check for popups
+        await this.handlePopups();
+
+        // 5.4 Cek rintangan: MFA Skip
         const skipBtn = this.page
           .locator(
             'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton',
@@ -443,7 +446,7 @@ class TeamsBot {
           continue;
         }
 
-        // 5.5 Cek Error Page
+        // 5.6 Cek Error Page
         const err = await this.checkForError();
         if (err) throw new Error(err);
 
