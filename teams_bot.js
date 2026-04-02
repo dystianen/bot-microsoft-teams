@@ -613,37 +613,39 @@ class TeamsBot {
       // Remaining steps will adapt based on the product defined above.
 
       // 15.5 Select a plan
-      console.log(`[STEP 15.5] Selecting '${planName}' plan...`);
-      const planDropdown = this.page
-        .locator(
-          'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"], div:has-text("Pilih paket") select, [aria-label*="Pilih paket" i], div:has-text("Pilih paket") [role="combobox"]',
-        )
-        .first();
-      await this.waitForVisible(planDropdown);
+      if (!isBusinessAppsFree) {
+        console.log(`[STEP 15.5] Selecting '${planName}' plan...`);
+        const planDropdown = this.page
+          .locator(
+            'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"], div:has-text("Pilih paket") select, [aria-label*="Pilih paket" i], div:has-text("Pilih paket") [role="combobox"]',
+          )
+          .first();
+        await this.waitForVisible(planDropdown);
 
-      try {
-        const tagName = await planDropdown.evaluate((el) =>
-          el.tagName.toLowerCase(),
-        );
-        if (tagName === "select") {
-          await planDropdown.selectOption({ label: planName });
-        } else {
-          await planDropdown.click();
-          await this.humanDelay(1000, 1500);
-          const option = this.page.getByRole("option", {
-            name: new RegExp(
-              `^${planName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-              "i",
-            ),
-          });
-          await option.click();
+        try {
+          const tagName = await planDropdown.evaluate((el) =>
+            el.tagName.toLowerCase(),
+          );
+          if (tagName === "select") {
+            await planDropdown.selectOption({ label: planName });
+          } else {
+            await planDropdown.click();
+            await this.humanDelay(1000, 1500);
+            const option = this.page.getByRole("option", {
+              name: new RegExp(
+                `^${planName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+                "i",
+              ),
+            });
+            await option.click();
+          }
+        } catch (err) {
+          console.warn(
+            `[WARN] Failed to select plan '${planName}' explicitly, it might be already selected. Continuing...`,
+          );
         }
-      } catch (err) {
-        console.warn(
-          `[WARN] Failed to select plan '${planName}' explicitly, it might be already selected. Continuing...`,
-        );
       }
-
+      
       // 15.7 Select '1 year' commitment if present (Only for Copilot)
       if (isCopilot) {
         console.log("[STEP 15.7] Selecting '1 year' commitment...");
@@ -809,11 +811,11 @@ class TeamsBot {
       console.log("[STEP 20] Verifying order success before proceeding...");
       let isSuccess = false;
       const verifyStart = Date.now();
-      
+
       while (Date.now() - verifyStart < 60000) { // Max 1 menit menunggu konfirmasi
         // 20.1 Cek apakah tombol sudah hilang?
         const isBtnHidden = await placeOrderBtn.isHidden().catch(() => true);
-        
+
         // 20.2 Cek apakah URL menunjukkan konfirmasi atau ada teks sukses?
         const currentUrl = this.page.url().toLowerCase();
         const bodyContent = await this.page.innerText("body").catch(() => "");
@@ -829,7 +831,7 @@ class TeamsBot {
         // 20.3 Cek apakah ada error muncul?
         const detectedError = await this.checkForError();
         if (detectedError) {
-           throw new Error(`PLACE_ORDER_FAILED: ${detectedError}`);
+          throw new Error(`PLACE_ORDER_FAILED: ${detectedError}`);
         }
 
         await this.page.waitForTimeout(2500); // Scan tiap 2.5s
