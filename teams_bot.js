@@ -605,9 +605,13 @@ class TeamsBot {
         `[STEP 12] Navigating to Marketplace catalog: ${catalogUrl}... (Plan: ${planName})`,
       );
       await this.page.goto(catalogUrl, {
-        waitUntil: "domcontentloaded",
+        waitUntil: "commit",
         timeout: HARD_TIMEOUT,
       });
+      
+      console.log("[INFO] Waiting for spinner to appear and finish...");
+      const spinnerLocator = this.page.locator(SPINNER_SELECTOR).first();
+      await spinnerLocator.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
       await this.waitForSpinnerGone(3000);
 
       // Remaining steps will adapt based on the product defined above.
@@ -645,7 +649,7 @@ class TeamsBot {
           );
         }
       }
-      
+
       // 15.7 Select '1 year' commitment if present (Only for Copilot)
       if (isCopilot) {
         console.log("[STEP 15.7] Selecting '1 year' commitment...");
