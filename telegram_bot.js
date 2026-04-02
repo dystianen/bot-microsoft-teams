@@ -307,7 +307,6 @@ function initializeBotHandlers(bot) {
     const chatId = msg.chat.id;
     try {
       await AccountHistory.deleteMany({ telegram_id: chatId.toString() });
-      bot.answerCallbackQuery(callbackQuery.id, { text: "History deleted." });
       bot.sendMessage(
         chatId,
         "✅ <b>Your account history has been cleared.</b>",
