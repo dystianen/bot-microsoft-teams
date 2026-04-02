@@ -876,19 +876,27 @@ class TeamsBot {
       }
 
       // 23. Menunggu start trial muncul lalu click
-      console.log("[STEP 23] Waiting for 'Start trial' button in Teams...");
+      console.log("[STEP 23] Waiting for Teams loading screen to finish...");
+      const teamsLoading = teamsPage.locator('#loading-screen').first();
+      // Wait for it to appear (optional), then wait for it to disappear
+      await teamsLoading.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+      await teamsLoading.waitFor({ state: "hidden", timeout: 120000 }).catch(() => {
+        console.log("[WARN] Teams loading screen hide timeout, it might still be loading or stuck.");
+      });
+
+      console.log("[INFO] Waiting for 'Start trial' button in Teams...");
       const startTrialBtn = teamsPage
         .locator(
           'button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial")',
         )
         .first();
       try {
-        await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
+        await startTrialBtn.waitFor({ state: "visible", timeout: 30000 });
         await startTrialBtn.click();
         await teamsPage.waitForTimeout(5000);
-        await this.waitForSpinnerGone(30000);
       } catch (err) {
-        console.warn("[WARN] 'Start trial' button not found in Teams. Continuing...");
+        await teamsPage.close().catch(() => { });
+        throw new Error("START_TRIAL_NOT_FOUND: Tombol 'Start trial' gagal ditemukan setelah Teams terbuka.");
       }
 
       // Close the teams tab after trial
