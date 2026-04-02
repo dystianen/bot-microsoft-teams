@@ -338,6 +338,7 @@ class TeamsBot {
   }
 
   async run() {
+    const email = this.accountConfig.microsoftAccount.email;
     try {
       await this.connect();
 
@@ -349,7 +350,6 @@ class TeamsBot {
       await this.waitForSpinnerGone();
 
       // 3. masukin email click next
-      const email = this.accountConfig.microsoftAccount.email;
       await remoteLogger.logStep(email, 3, `Entering email: ${email}`);
       const emailInput = this.getGenericLocator("email");
       await this.waitForVisible(emailInput);
