@@ -333,7 +333,6 @@ class TeamsBot {
   async run() {
     try {
       await this.connect();
-      let uncheckedLicenses = [];
 
       // 2. buka https://admin.microsoft.com/
       console.log("[STEP 2] Opening https://admin.microsoft.com/...");
@@ -538,38 +537,26 @@ class TeamsBot {
       await licensesTab.click();
       await this.waitForSpinnerGone(2000);
 
-      // 10. uncheck all checked checkboxes and remember them
+      // 10. uncheck all checked checkboxes
       console.log(
-        "[STEP 10] Unchecking all checked checkboxes and remembering them...",
+        "[STEP 10] Unchecking all checked checkboxes...",
       );
       try {
         await this.page.waitForTimeout(2000); // Wait for load
-        uncheckedLicenses = await this.page.evaluate(() => {
+        await this.page.evaluate(() => {
           const checkboxes = [
             ...document.querySelectorAll('input[type="checkbox"]'),
           ];
-          const results = [];
           checkboxes.forEach((cb) => {
             if (cb.checked) {
-              const labelText = (
-                cb.getAttribute("aria-label") ||
-                cb.parentElement?.innerText ||
-                ""
-              )
-                .split("\n")[0]
-                .trim();
-              if (labelText) results.push(labelText);
               cb.click();
             }
           });
-          return results;
         });
-        console.log(
-          `[INFO] Unchecked and remembered: ${uncheckedLicenses.join(", ") || "None"}`,
-        );
+        console.log("[INFO] All checked checkboxes have been unchecked.");
       } catch (err) {
         console.warn(
-          "[WARN] Failed to uncheck and remember checkboxes:",
+          "[WARN] Failed to uncheck checkboxes:",
           err.message,
         );
       }
@@ -947,36 +934,22 @@ class TeamsBot {
       await finalLicensesTab.click();
       await this.waitForSpinnerGone(2000);
 
-      // 27. restore previously unchecked licenses
-      console.log(
-        "[STEP 27] Re-checking the previous licenses:",
-        uncheckedLicenses.join(", "),
-      );
-      for (const licenseLabelText of uncheckedLicenses) {
-        if (!licenseLabelText) continue;
-        try {
-          console.log(`[INFO] Restoring license: "${licenseLabelText}"...`);
-          const locator = this.page
-            .locator(
-              `input[type="checkbox"][aria-label*="${licenseLabelText}" i], label:has-text("${licenseLabelText}")`,
-            )
-            .first();
-
-          await locator
-            .waitFor({ state: "visible", timeout: 5000 })
-            .catch(() => { });
-          const isChecked = await locator.isChecked().catch(() => false);
-          if (!isChecked) {
-            await locator.check({ force: true }).catch(async () => {
-              await locator.click({ force: true }).catch(() => { });
-            });
-          }
-        } catch (err) {
-          console.warn(
-            `[WARN] Failed to restore license "${licenseLabelText}":`,
-            err.message,
-          );
-        }
+      // 27. restore all licenses (check all checkboxes)
+      console.log("[STEP 27] Re-checking all available checkboxes...");
+      try {
+        await this.page.evaluate(() => {
+          const checkboxes = [
+            ...document.querySelectorAll('input[type="checkbox"]'),
+          ];
+          checkboxes.forEach((cb) => {
+            if (!cb.checked) {
+              cb.click();
+            }
+          });
+        });
+        console.log("[INFO] All checkboxes have been clicked to check.");
+      } catch (err) {
+        console.warn("[WARN] Failed to re-check all checkboxes:", err.message);
       }
 
       await this.humanDelay(1000, 2000);
