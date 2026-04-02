@@ -164,7 +164,9 @@ function initializeBotHandlers(bot) {
 
           if (result.status === "SUCCESS") {
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
-            message += `Time: <code>${date.format(new Date(), "DD MMM YYYY HH:mm", true)}</code>\n`;
+            // Add 7 hours to UTC for GMT+7 (WIB)
+            const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+            message += `Time: <code>${date.format(nowWib, "DD MMM YYYY HH:mm", true)}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           } else {
@@ -282,7 +284,9 @@ function initializeBotHandlers(bot) {
 
       let message = "📜 <b>Recent Account History (Last 10):</b>\n\n";
       records.forEach((rec, idx) => {
-        const timeStr = date.format(rec.createdAt, "DD/MM HH:mm");
+        // Add 7 hours to UTC for GMT+7 (WIB)
+        const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
+        const timeStr = date.format(dateWib, "DD/MM HH:mm");
         const statusIcon = rec.status === "SUCCESS" ? "✅" : "❌";
         message += `${idx + 1}. ${statusIcon} <code>${timeStr}</code>\n`;
         message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
