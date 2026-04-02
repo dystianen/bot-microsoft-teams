@@ -36,7 +36,7 @@ class TeamsBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        await this.page.waitForTimeout(2000).catch(() => {
+        await this.page.waitForTimeout(4000).catch(() => {
           isDone = true;
         });
         if (isDone) break;
@@ -88,7 +88,7 @@ class TeamsBot {
 
       for (const frame of this.page.frames()) {
         try {
-          const frameText = await frame.innerText("body").catch(() => "");
+          const frameText = await frame.textContent("body").catch(() => "");
           const lowerFrameText = frameText.toLowerCase();
           const found = markers.find((m) =>
             lowerFrameText.includes(m.toLowerCase()),
@@ -322,7 +322,14 @@ class TeamsBot {
       console.log("[STEP 1] Launching local browser in incognito mode...");
       this.browser = await chromium.launch({
         headless: this.accountConfig?.headless !== undefined ? this.accountConfig.headless : config.headless,
-        args: ["--incognito", "--disable-blink-features=AutomationControlled"],
+        args: [
+          "--incognito", 
+          "--disable-blink-features=AutomationControlled",
+          "--disable-gpu",
+          "--disable-dev-shm-usage",
+          "--disable-software-rasterizer",
+          "--mute-audio"
+        ],
       });
       this.context = await this.browser.newContext();
     }
@@ -545,7 +552,8 @@ class TeamsBot {
         "[STEP 10] Unchecking all checked checkboxes...",
       );
       try {
-        await this.page.waitForTimeout(2000); // Wait for load
+        await this.page.locator('input[type="checkbox"]').first().waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+        await this.page.waitForTimeout(3000); // Wait for load
         await this.page.evaluate(() => {
           const checkboxes = [
             ...document.querySelectorAll('input[type="checkbox"]'),
@@ -948,6 +956,8 @@ class TeamsBot {
       // 27. restore all licenses (check all checkboxes)
       console.log("[STEP 27] Re-checking all available checkboxes...");
       try {
+        await this.page.locator('input[type="checkbox"]').first().waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
+        await this.page.waitForTimeout(3000); // Wait for checkboxes state to be fully populated/rendered
         await this.page.evaluate(() => {
           const checkboxes = [
             ...document.querySelectorAll('input[type="checkbox"]'),
