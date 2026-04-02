@@ -35,14 +35,17 @@ function initializeBotHandlers(bot) {
   // Sequential message queue for Telegram
   let _msgQueue = Promise.resolve();
   async function safeSendMessage(chatId, text, options = {}) {
-    _msgQueue = _msgQueue.then(async () => {
-      try {
-        await bot.sendMessage(chatId, text, options);
-      } catch (err) {
-        console.error("[Telegram] Error sending message:", err.message);
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    });
+    _msgQueue = _msgQueue
+      .then(async () => {
+        try {
+          await bot.sendMessage(chatId, text, options);
+        } catch (err) {
+          console.error("[Telegram] Error sending message:", err.message);
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      })
+      .catch(() => {})
+      .then(() => Promise.resolve()); // reset ke fresh promise supaya chain tidak numpuk
     return _msgQueue;
   }
 
@@ -57,6 +60,32 @@ function initializeBotHandlers(bot) {
 
   // Memory storage for temporary interactive steps and pending accounts
   const sessions = {};
+  const SESSION_TTL = 30 * 60 * 1000; // 30 menit
+
+  // Helper: ambil atau buat session, sekaligus update lastActivity
+  function getSession(chatId) {
+    if (!sessions[chatId]) {
+      sessions[chatId] = {
+        accounts: [],
+        step: "IDLE",
+        running: false,
+        lastActivity: Date.now(),
+      };
+    }
+    sessions[chatId].lastActivity = Date.now();
+    return sessions[chatId];
+  }
+
+  // Cleanup session yang tidak aktif tiap 10 menit
+  setInterval(() => {
+    const now = Date.now();
+    for (const chatId in sessions) {
+      if (now - sessions[chatId].lastActivity > SESSION_TTL) {
+        console.log(`[Session] Cleaning up inactive session for chatId: ${chatId}`);
+        delete sessions[chatId];
+      }
+    }
+  }, 10 * 60 * 1000);
 
   async function getUserConfig(telegram_id) {
     let userConf = await UserConfig.findOne({
@@ -87,7 +116,10 @@ function initializeBotHandlers(bot) {
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     await getUserConfig(chatId);
-    sessions[chatId] = { accounts: [], step: "IDLE", running: false };
+    const session = getSession(chatId);
+    session.accounts = [];
+    session.step = "IDLE";
+    session.running = false;
 
     bot.sendMessage(
       chatId,
@@ -98,8 +130,8 @@ function initializeBotHandlers(bot) {
 
   bot.onText(/➕ Add Account/, (msg) => {
     const chatId = msg.chat.id;
-    sessions[chatId] = sessions[chatId] || { accounts: [], step: "IDLE" };
-    sessions[chatId].step = "WAIT_ACCOUNT";
+    const session = getSession(chatId);
+    session.step = "WAIT_ACCOUNT";
     bot.sendMessage(chatId, "Send email|password (one per line):", {
       parse_mode: "Markdown",
     });
@@ -107,7 +139,7 @@ function initializeBotHandlers(bot) {
 
   bot.onText(/🚀 Generate/, async (msg) => {
     const chatId = msg.chat.id;
-    const session = sessions[chatId] || { accounts: [], running: false };
+    const session = getSession(chatId);
 
     if (session.running) {
       return bot.sendMessage(chatId, "⚠️ Automation is already running!");
@@ -119,7 +151,6 @@ function initializeBotHandlers(bot) {
 
     const userConf = await getUserConfig(chatId);
     session.running = true;
-    sessions[chatId] = session;
 
     bot.sendMessage(
       chatId,
@@ -143,7 +174,7 @@ function initializeBotHandlers(bot) {
           microsoftAccount: accountData,
           telegram_id: chatId,
           productUrl: userConf.microsoftUrl,
-          headless: userConf.headless, // Pass the user's preference
+          headless: userConf.headless,
         };
 
         try {
@@ -164,7 +195,6 @@ function initializeBotHandlers(bot) {
 
           if (result.status === "SUCCESS") {
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
-            // Add 7 hours to UTC for GMT+7 (WIB)
             const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
             message += `Time: <code>${date.format(nowWib, "DD MMM YYYY HH:mm", true)}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
@@ -176,7 +206,6 @@ function initializeBotHandlers(bot) {
           }
         } catch (err) {
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
-          // Also record critical process failures
           const failRecord = new AccountHistory({
             email: accountData.email,
             password: accountData.password,
@@ -190,7 +219,6 @@ function initializeBotHandlers(bot) {
 
       try {
         while (true) {
-          // If we can start a new worker (below concurrency limit AND have accounts left)
           if (
             activeWorkers < maxWorkers &&
             session.accounts.length > 0 &&
@@ -201,7 +229,6 @@ function initializeBotHandlers(bot) {
             const currentIdx = globalIdx;
 
             activeWorkers++;
-            // Launch in background
             const promise = processAccount(accountData, currentIdx).finally(
               () => {
                 activeWorkers--;
@@ -210,21 +237,15 @@ function initializeBotHandlers(bot) {
             );
             pendingPromises.add(promise);
 
-            // STAGGER: ALWAYS wait 5s after starting each new window,
-            // unless we've reached the concurrency limit or no accounts left.
             if (session.accounts.length > 0 && activeWorkers < maxWorkers) {
               await new Promise((r) => setTimeout(r, 5000));
             }
-          }
-          // If the queue is finished or forced to stop, wait for remaining workers to finish then break
-          else if (
+          } else if (
             activeWorkers === 0 &&
             (session.accounts.length === 0 || session.forceStop)
           ) {
             break;
-          }
-          // If we are at concurrency limit, wait 1s and check again
-          else {
+          } else {
             await new Promise((r) => setTimeout(r, 1000));
           }
         }
@@ -262,10 +283,9 @@ function initializeBotHandlers(bot) {
 
   bot.onText(/🛑 Stop Queue/, (msg) => {
     const chatId = msg.chat.id;
-    if (sessions[chatId]) {
-      sessions[chatId].accounts = [];
-      sessions[chatId].forceStop = true;
-    }
+    const session = getSession(chatId);
+    session.accounts = [];
+    session.forceStop = true;
     bot.sendMessage(chatId, "🛑 Stopping queue...");
   });
 
@@ -284,7 +304,6 @@ function initializeBotHandlers(bot) {
 
       let message = "📜 <b>Recent Account History (Last 10):</b>\n\n";
       records.forEach((rec, idx) => {
-        // Add 7 hours to UTC for GMT+7 (WIB)
         const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
         const timeStr = date.format(dateWib, "DD/MM HH:mm");
         const statusIcon = rec.status === "SUCCESS" ? "✅" : "❌";
@@ -319,7 +338,10 @@ function initializeBotHandlers(bot) {
 
   bot.onText(/🧹 Reset Session/, (msg) => {
     const chatId = msg.chat.id;
-    sessions[chatId] = { accounts: [], step: "IDLE", running: false };
+    const session = getSession(chatId);
+    session.accounts = [];
+    session.step = "IDLE";
+    session.running = false;
     bot.sendMessage(chatId, "Session cleared.", mainMenu);
   });
 
@@ -366,14 +388,10 @@ function initializeBotHandlers(bot) {
     const chatId = message.chat.id;
     const data = callbackQuery.data;
 
-    sessions[chatId] = sessions[chatId] || {
-      accounts: [],
-      step: "IDLE",
-      running: false,
-    };
+    const session = getSession(chatId);
 
     if (data === "set_concurrency") {
-      sessions[chatId].step = "SET_CONCURRENCY";
+      session.step = "SET_CONCURRENCY";
       bot.sendMessage(
         chatId,
         "How many accounts should run together? (Enter a number, e.g., 5)",
@@ -455,7 +473,7 @@ function initializeBotHandlers(bot) {
     const text = msg.text;
 
     if (!text || text.startsWith("/")) return;
-    const session = sessions[chatId];
+    const session = getSession(chatId);
     if (!session || session.step === "IDLE") return;
 
     if (session.step === "WAIT_ACCOUNT") {
