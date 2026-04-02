@@ -949,23 +949,46 @@ class TeamsBot {
       await this.waitForSpinnerGone(2000);
 
       // 27. restore all licenses (check all checkboxes)
-      console.log("[STEP 27] Re-checking all available checkboxes...");
+      await remoteLogger.logStep(email, 27, "Re-checking all available checkboxes (Strict Verification)...");
       try {
-        await this.page.locator('input[type="checkbox"]').first().waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
-        await this.page.waitForTimeout(3000); // Wait for checkboxes state to be fully populated/rendered
-        await this.page.evaluate(() => {
-          const checkboxes = [
-            ...document.querySelectorAll('input[type="checkbox"]'),
-          ];
-          checkboxes.forEach((cb) => {
-            if (!cb.checked) {
-              cb.click();
-            }
+        await this.page.locator('input[type="checkbox"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+        await this.page.waitForTimeout(4000); 
+
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const stats = await this.page.evaluate(() => {
+            const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+            let clickedCount = 0;
+            let stillUnchecked = 0;
+            
+            checkboxes.forEach((cb) => {
+              if (!cb.checked) {
+                cb.click();
+                clickedCount++;
+              }
+            });
+
+            // Re-check after clicking
+            const finalUnchecked = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(cb => !cb.checked).length;
+            return { clickedCount, finalUnchecked };
           });
-        });
-        console.log("[INFO] All checkboxes have been clicked to check.");
+
+          if (stats.finalUnchecked === 0) {
+            console.log(`[INFO] Step 27 Success: All checkboxes are now checked (Attempt ${attempt}).`);
+            break;
+          } else {
+            console.warn(`[WARN] Step 27 Attempt ${attempt}: ${stats.finalUnchecked} checkboxes still unchecked. Retrying...`);
+            await this.page.waitForTimeout(2000);
+          }
+
+          if (attempt === 3 && stats.finalUnchecked > 0) {
+            throw new Error(`STRICT_CHECKBOX_FAILED: ${stats.finalUnchecked} checkboxes still unchecked after 3 attempts.`);
+          }
+        }
+        console.log("[INFO] All checkboxes have been verified as checked.");
       } catch (err) {
-        console.warn("[WARN] Failed to re-check all checkboxes:", err.message);
+        console.warn("[WARN] Step 27 Checkbox verification error:", err.message);
+        // We throw if it's a strict failure we defined
+        if (err.message.includes("STRICT_CHECKBOX_FAILED")) throw err;
       }
 
       await this.humanDelay(1000, 2000);
