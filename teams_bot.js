@@ -234,7 +234,7 @@ class TeamsBot {
       "Tutup",
       "Lain kali",
       "Selesai",
-      "X",
+      // "X" sengaja dihapus — terlalu generic, bisa salah klik tombol di halaman MFA
     ];
     // Don't split phrases into words to avoid false positives (e.g. "no" in "notifications")
     const keywords = names.map((n) => n.trim().toLowerCase());
@@ -434,7 +434,7 @@ class TeamsBot {
           break;
         }
 
-        // 5.2 Cek rintangan: Stay signed in
+        // 5.2 Cek rintangan: Stay signed in (KMSI)
         const yesBtn = this.page
           .locator(
             'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], #idSIButton9',
@@ -442,15 +442,16 @@ class TeamsBot {
           .first();
         if (await yesBtn.isVisible().catch(() => false)) {
           console.log("[INFO] Handling 'Stay signed in'...");
-          await yesBtn.click();
-          await this.humanDelay(2000, 3000);
-          continue;
+          try {
+            await yesBtn.click({ timeout: 5000 });
+            await this.humanDelay(2000, 3000);
+            continue;
+          } catch (e) {
+            console.log("[WARN] 'Yes' button blocked or failed, checking popups...");
+          }
         }
 
-        // 5.3 Check for popups
-        await this.handlePopups();
-
-        // 5.4 Cek rintangan: MFA Skip
+        // 5.3 Cek rintangan: MFA Skip (PRIORITAS — harus dicek SEBELUM handlePopups)
         const skipBtn = this.page
           .locator(
             'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton',
@@ -458,12 +459,16 @@ class TeamsBot {
           .first();
         if (await skipBtn.isVisible().catch(() => false)) {
           console.log("[INFO] Handling MFA 'Skip for now'...");
-          await skipBtn.click();
-          await this.humanDelay(2000, 3000);
-          continue;
+          try {
+            await skipBtn.click({ timeout: 5000 });
+            await this.humanDelay(2000, 3000);
+            continue;
+          } catch (e) {
+            console.log("[WARN] 'Skip for now' blocked, checking popups...");
+          }
         }
 
-        // 5.4 Cek rintangan: Choose Account / Use Password
+        // 5.4 Cek rintangan: Use Password prompt
         const usePass = this.page
           .locator(
             "text=Use my password, text=Gunakan kata sandi saya, #allowInterrupt",
@@ -471,14 +476,21 @@ class TeamsBot {
           .first();
         if (await usePass.isVisible().catch(() => false)) {
           console.log("[INFO] Handling 'Use my password' prompt...");
-          await usePass.click();
-          await this.humanDelay(2000, 3000);
-          continue;
+          try {
+            await usePass.click({ timeout: 5000 });
+            await this.humanDelay(2000, 3000);
+            continue;
+          } catch (e) {
+            console.log("[WARN] 'Use Password' prompt blocked, checking popups...");
+          }
         }
 
-        // 5.6 Cek Error Page
+        // 5.5 Cek Error Page
         const err = await this.checkForError();
         if (err) throw new Error(err);
+
+        // 5.6 Tangani popup umum SETELAH semua pengecekan MFA selesai
+        await this.handlePopups();
 
         await this.page.waitForTimeout(2500); // Tunggu antar scan
       }
