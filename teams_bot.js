@@ -1088,35 +1088,66 @@ class TeamsBot {
       await finalLicensesTab.click();
       await this.waitForSpinnerGone(2000);
 
-      // 27. restore specific license (Office 365 E3)
-      const targetSku = "6fd2c87f-b296-42f0-b197-1e91e994b900"; // Office 365 E3 SKU
+      // 27. Restore license - search by name from a prioritized list
+      const licenseNames = [
+        "Microsoft 365 Business Standard",
+        "Microsoft 365 Business Basic",
+        "Microsoft 365 Business Premium",
+        "Microsoft 365 E3",
+        "Microsoft 365 E5",
+        "Office 365 E1",
+        "Office 365 E3",
+        "Office 365 E5",
+      ];
       await remoteLogger.logStep(
         email,
         27,
-        "Ensuring 'Office 365 E3' license is checked (Strict Verification)...",
+        "Searching for a known license in checklist to restore...",
       );
       try {
         await this.waitForSpinnerGone(1000);
-        const targetCheckbox = this.page.locator(`input[data-automation-id*="${targetSku}"], input[value="${targetSku}"]`).first();
-        
-        await targetCheckbox.waitFor({ state: "visible", timeout: 15000 }).catch(() => {
-          throw new Error(`LICENSE_NOT_FOUND: 'Office 365 E3' checkbox not found on page.`);
-        });
+        await this.page.locator('input[type="checkbox"]').first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+
+        // Find the first matching license checkbox by label text
+        let targetCheckbox = null;
+        let foundLicenseName = null;
+
+        for (const licenseName of licenseNames) {
+          // Look for a checkbox whose nearest label/row contains the license name
+          const candidate = this.page.locator(
+            `label:has-text("${licenseName}") input[type="checkbox"], ` +
+            `[aria-label*="${licenseName}" i], ` +
+            `li:has-text("${licenseName}") input[type="checkbox"], ` +
+            `div:has-text("${licenseName}") input[type="checkbox"]`
+          ).first();
+
+          const isVisible = await candidate.isVisible({ timeout: 3000 }).catch(() => false);
+          if (isVisible) {
+            targetCheckbox = candidate;
+            foundLicenseName = licenseName;
+            await remoteLogger.logStep(email, 27, `Found license in checklist: '${licenseName}'`);
+            break;
+          }
+        }
+
+        if (!targetCheckbox) {
+          throw new Error(`LICENSE_NOT_FOUND: None of the known licenses found in the checklist. Checked: ${licenseNames.join(", ")}`);
+        }
 
         for (let attempt = 1; attempt <= 3; attempt++) {
           await this.waitForSpinnerGone(500);
-          const isEnabled = await targetCheckbox.isChecked();
-          
-          if (!isEnabled) {
-            await remoteLogger.logStep(email, 27, `Attempt ${attempt}: Clicking 'Office 365 E3' checkbox.`);
+          const isChecked = await targetCheckbox.isChecked().catch(() => false);
+
+          if (!isChecked) {
+            await remoteLogger.logStep(email, 27, `Attempt ${attempt}: Clicking '${foundLicenseName}' checkbox.`);
             await targetCheckbox.click({ force: true });
             await this.page.waitForTimeout(1500);
           }
 
           // Verifikasi kembali status centangnya
-          const verifyChecked = await targetCheckbox.isChecked();
+          const verifyChecked = await targetCheckbox.isChecked().catch(() => false);
           if (verifyChecked) {
-            await remoteLogger.logStep(email, 27, `Successfully verified 'Office 365 E3' is checked.`);
+            await remoteLogger.logStep(email, 27, `Successfully verified '${foundLicenseName}' is checked.`);
             break;
           } else {
             await remoteLogger.logStep(email, 27, `Attempt ${attempt}: Still unchecked. Retrying...`);
@@ -1124,7 +1155,7 @@ class TeamsBot {
           }
 
           if (attempt === 3 && !verifyChecked) {
-            throw new Error(`STRICT_CHECKBOX_FAILED: Failed to check 'Office 365 E3' license after 3 attempts.`);
+            throw new Error(`STRICT_CHECKBOX_FAILED: Failed to check '${foundLicenseName}' license after 3 attempts.`);
           }
         }
       } catch (err) {
