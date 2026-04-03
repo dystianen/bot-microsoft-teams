@@ -361,7 +361,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         2,
-        "Opening https://admin.microsoft.com/...",
+        "🌐 Membuka halaman Microsoft Admin Center...",
       );
       await this.page.goto("https://admin.microsoft.com/", {
         waitUntil: "domcontentloaded",
@@ -370,7 +370,7 @@ class TeamsBot {
       await this.waitForSpinnerGone();
 
       // 3. masukin email click next
-      await remoteLogger.logStep(email, 3, `Entering email: ${email}`);
+      await remoteLogger.logStep(email, 3, `📧 Memasukkan email: ${email}`);
       const emailInput = this.getGenericLocator("email");
       await this.waitForVisible(emailInput);
       await emailInput.fill(email);
@@ -405,7 +405,7 @@ class TeamsBot {
 
       // 4. masukin password
       const password = this.accountConfig.microsoftAccount.password;
-      await remoteLogger.logStep(email, 4, "Entering password...");
+      await remoteLogger.logStep(email, 4, "🔑 Memasukkan password akun...");
       const passwordInput = this.page.locator('input[type="password"]').first();
       await this.waitForVisible(passwordInput);
       await passwordInput.fill(password);
@@ -416,7 +416,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         5,
-        "Waiting for Dashboard or login prompts (KMSI/MFA)...",
+        "⏳ Menunggu dashboard atau konfirmasi login (KMSI/MFA)...",
       );
 
       const dashboardMarker = this.page
@@ -491,7 +491,7 @@ class TeamsBot {
       }
 
       // 6. select menu users (collapse dia)
-      await remoteLogger.logStep(email, 6, "Selecting 'Users' menu...");
+      await remoteLogger.logStep(email, 6, "📂 Membuka menu 'Pengguna' di panel navigasi kiri...");
 
       await this.waitForSpinnerGone(1000);
       await this.handlePopups(); // One more check before interacting
@@ -519,7 +519,7 @@ class TeamsBot {
       }
 
       // 7. terus pilih activer users
-      await remoteLogger.logStep(email, 7, "Selecting 'Active users'...");
+      await remoteLogger.logStep(email, 7, "👥 Memilih sub-menu 'Pengguna Aktif'...");
       const activeUsersLink = this.page
         .locator(
           'a[data-automation-id="LeftNavactiveusersnodeNavToggler"], a:has-text("Active users"), a:has-text("Pengguna aktif")',
@@ -536,7 +536,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         8,
-        `Searching for user: ${fullEmail}...`,
+        `🔍 Mencari akun pengguna: ${fullEmail}...`,
       );
 
       const searchInput = this.page
@@ -567,7 +567,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         9,
-        "Selecting 'Licenses and apps' tab...",
+        "📋 Membuka tab 'Lisensi dan Aplikasi' milik pengguna...",
       );
       const licensesTab = this.page
         .locator(
@@ -579,7 +579,7 @@ class TeamsBot {
       await this.waitForSpinnerGone(2000);
 
       // 10. uncheck all checked checkboxes
-      await remoteLogger.logStep(email, 10, "Unchecking all checked checkboxes...");
+      await remoteLogger.logStep(email, 10, "🔲 Menonaktifkan semua lisensi yang sedang aktif...");
       try {
         await this.waitForSpinnerGone(1000); // Ensure no spinner blocks the initial state
         const checkboxSelector = 'input[type="checkbox"]';
@@ -603,23 +603,23 @@ class TeamsBot {
           const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
           
           if (remaining === 0) {
-            await remoteLogger.logStep(email, 10, `Successfully unchecked all checkboxes (Attempt ${attempt}).`);
+            await remoteLogger.logStep(email, 10, `✅ Semua lisensi berhasil dinonaktifkan (Percobaan ke-${attempt}).`);
             break;
           } else {
-            await remoteLogger.logStep(email, 10, `Attempt ${attempt}: ${remaining} checkboxes still checked. Retrying...`);
+            await remoteLogger.logStep(email, 10, `⚠️ Percobaan ke-${attempt}: Masih ada ${remaining} lisensi yang aktif. Mencoba ulang...`);
             if (attempt === 3) throw new Error(`UNCHECK_ALL_FAILED: Still have ${remaining} checkboxes checked after 3 attempts.`);
             await this.waitForSpinnerGone(2000);
           }
         }
       } catch (err) {
-        await remoteLogger.logError(email, "Step 10 Failed (Uncheck All)", err.message);
+        await remoteLogger.logError(email, "❌ Langkah 10 Gagal: Tidak dapat menonaktifkan semua lisensi", err.message);
         throw err;
       }
 
       await this.humanDelay(1000, 2000);
 
       // 11. terus saves changes
-      await remoteLogger.logStep(email, 11, "Clicking 'Save changes'...");
+      await remoteLogger.logStep(email, 11, "💾 Menyimpan perubahan lisensi (nonaktifkan semua)...");
       const saveBtn = this.page
         .locator(
           'button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")',
@@ -648,7 +648,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         12,
-        `Navigating to Marketplace catalog... (Plan: ${planName})`,
+        `🛒 Membuka halaman Marketplace untuk produk: ${planName}...`,
       );
       await this.page.goto(catalogUrl, {
         waitUntil: "commit",
@@ -757,7 +757,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         17,
-        "Waiting for 'Buy' button and clicking...",
+        "🛍️ Menunggu tombol 'Beli' muncul dan mengkliknya...",
       );
       const buyBtn = this.page
         .locator('button:has-text("Buy"), button:has-text("Beli")')
@@ -837,7 +837,7 @@ class TeamsBot {
       }
 
       // 19. Place order (STRICT MODE)
-      await remoteLogger.logStep(email, 19, "Clicking 'Place order'...");
+      await remoteLogger.logStep(email, 19, "📦 Mengklik tombol 'Buat Pesanan' untuk konfirmasi pembelian...");
       const placeOrderBtn = this.page
         .locator(
           'button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan")',
@@ -877,7 +877,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         20,
-        "Verifying order success before proceeding...",
+        "🔎 Memverifikasi keberhasilan pesanan sebelum melanjutkan...",
       );
       let isSuccess = false;
       const verifyStart = Date.now();
@@ -931,7 +931,7 @@ class TeamsBot {
       await this.waitForSpinnerGone(5000);
 
       // 21. Buka https://teams.microsoft.com/v2/ di tab baru
-      await remoteLogger.logStep(email, 21, "Opening Teams in a new tab...");
+      await remoteLogger.logStep(email, 21, "🚀 Membuka Microsoft Teams di tab baru untuk aktivasi trial...");
       const teamsPage = await this.context.newPage();
       await teamsPage.goto("https://teams.microsoft.com/v2/", {
         waitUntil: "domcontentloaded",
@@ -943,7 +943,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         22,
-        "Waiting for 'Sign in' button or Permission Error in Teams...",
+        "⏳ Menunggu tombol 'Masuk' muncul di Teams (atau deteksi error izin)...",
       );
       const teamsSignInBtn = teamsPage
         .locator(
@@ -1006,11 +1006,11 @@ class TeamsBot {
         .first();
       try {
         await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
-        await remoteLogger.logStep(email, 23.5, "Clicking 'Start trial' button in Teams...");
+        await remoteLogger.logStep(email, 23.5, "▶️ Mengklik tombol 'Mulai Uji Coba' di Microsoft Teams...");
         await startTrialBtn.click();
         
         // Menunggu loading setelah klik start trial selesai sebelum close
-        await remoteLogger.logStep(email, 23.6, "Waiting for trial setup to complete (Loading)...");
+        await remoteLogger.logStep(email, 23.6, "⏳ Menunggu proses aktivasi uji coba selesai (loading)...");
         await teamsPage.waitForTimeout(5000); // Penyangga awal
         
         // Mencari spinner di teamsPage
@@ -1022,7 +1022,7 @@ class TeamsBot {
           });
         }
         
-        await remoteLogger.logStep(email, 23.7, "Trial setup finished. Closing Teams tab.");
+        await remoteLogger.logStep(email, 23.7, "✅ Aktivasi uji coba selesai. Menutup tab Teams...");
       } catch (err) {
         await teamsPage.close().catch(() => {});
         throw new Error(
@@ -1037,7 +1037,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         24,
-        "Returning to Admin Center to restore license...",
+        "↩️ Kembali ke Admin Center untuk memulihkan lisensi pengguna...",
       );
       await this.page.bringToFront();
 
@@ -1052,7 +1052,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         25,
-        `Re-searching for user: ${fullEmail}...`,
+        `🔍 Mencari ulang pengguna: ${fullEmail} untuk pemulihan lisensi...`,
       );
 
       const finalSearchInput = this.page
@@ -1077,7 +1077,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         26,
-        "Selecting 'Licenses and apps' tab...",
+        "📋 Membuka kembali tab 'Lisensi dan Aplikasi' untuk pemulihan...",
       );
       const finalLicensesTab = this.page
         .locator(
@@ -1102,7 +1102,7 @@ class TeamsBot {
       await remoteLogger.logStep(
         email,
         27,
-        "Searching for a known license in checklist to restore...",
+        "🔍 Mencari lisensi yang dikenal di daftar untuk dipulihkan...",
       );
       try {
         await this.waitForSpinnerGone(1000);
@@ -1125,7 +1125,7 @@ class TeamsBot {
           if (isVisible) {
             targetCheckbox = candidate;
             foundLicenseName = licenseName;
-            await remoteLogger.logStep(email, 27, `Found license in checklist: '${licenseName}'`);
+            await remoteLogger.logStep(email, 27, `✅ Lisensi ditemukan di daftar: '${licenseName}' — akan diaktifkan kembali.`);
             break;
           }
         }
@@ -1139,7 +1139,7 @@ class TeamsBot {
           const isChecked = await targetCheckbox.isChecked().catch(() => false);
 
           if (!isChecked) {
-            await remoteLogger.logStep(email, 27, `Attempt ${attempt}: Clicking '${foundLicenseName}' checkbox.`);
+            await remoteLogger.logStep(email, 27, `🖱️ Percobaan ke-${attempt}: Mengaktifkan centang lisensi '${foundLicenseName}'...`);
             await targetCheckbox.click({ force: true });
             await this.page.waitForTimeout(1500);
           }
@@ -1147,10 +1147,10 @@ class TeamsBot {
           // Verifikasi kembali status centangnya
           const verifyChecked = await targetCheckbox.isChecked().catch(() => false);
           if (verifyChecked) {
-            await remoteLogger.logStep(email, 27, `Successfully verified '${foundLicenseName}' is checked.`);
+            await remoteLogger.logStep(email, 27, `✅ Lisensi '${foundLicenseName}' berhasil diaktifkan kembali dan terverifikasi.`);
             break;
           } else {
-            await remoteLogger.logStep(email, 27, `Attempt ${attempt}: Still unchecked. Retrying...`);
+            await remoteLogger.logStep(email, 27, `⚠️ Percobaan ke-${attempt}: Lisensi masih belum tercentang. Mencoba ulang...`);
             await this.waitForSpinnerGone(1000);
           }
 
@@ -1159,13 +1159,13 @@ class TeamsBot {
           }
         }
       } catch (err) {
-        await remoteLogger.logError(email, "Step 27 Failed (License Restore)", err.message);
+        await remoteLogger.logError(email, "❌ Langkah 27 Gagal: Tidak dapat memulihkan lisensi", err.message);
         throw err;
       }
       await this.humanDelay(1000, 2000);
 
       // 28. Save changes
-      await remoteLogger.logStep(email, 28, "Clicking 'Save changes'...");
+      await remoteLogger.logStep(email, 28, "💾 Menyimpan perubahan lisensi yang telah dipulihkan...");
       const finalSaveBtn = this.page
         .locator(
           'button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")',
@@ -1175,12 +1175,12 @@ class TeamsBot {
       await finalSaveBtn.click();
       await this.waitForSpinnerGone(5000);
 
-      await remoteLogger.logSuccess(email, "Automation finished successfully.");
+      await remoteLogger.logSuccess(email, "🎉 Proses otomasi selesai dengan sukses! Semua langkah berhasil dijalankan.");
       return { success: true };
     } catch (error) {
       await remoteLogger.logError(
         this.accountConfig?.microsoftAccount?.email,
-        "Automation failed",
+        "❌ Otomasi gagal — proses dihentikan",
         error.message,
       );
       return { success: false, error: error.message };
