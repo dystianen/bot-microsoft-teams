@@ -179,7 +179,7 @@ class TeamsBot {
           );
           return true;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 2. Fallback: Playwright native click di Main Page & Semua Frames
@@ -216,7 +216,7 @@ class TeamsBot {
           );
           return true;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     console.error(`[ERROR] Button not found in any frame for names:`, names);
@@ -311,7 +311,7 @@ class TeamsBot {
             foundSomethingVisible = true;
             break; // Break the frame loop to start over from attempt
           }
-        } catch (e) {}
+        } catch (e) { }
       }
     }
   }
@@ -611,7 +611,7 @@ class TeamsBot {
           .locator(checkboxSelector)
           .first()
           .waitFor({ state: "visible", timeout: 15000 })
-          .catch(() => {});
+          .catch(() => { });
         await this.page.waitForTimeout(3000);
 
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -708,7 +708,7 @@ class TeamsBot {
       const spinnerLocator = this.page.locator(SPINNER_SELECTOR).first();
       await spinnerLocator
         .waitFor({ state: "visible", timeout: 10000 })
-        .catch(() => {});
+        .catch(() => { });
       await this.waitForSpinnerGone(3000);
 
       // Remaining steps will adapt based on the product defined above.
@@ -809,7 +809,15 @@ class TeamsBot {
         "🛍️ Menunggu tombol 'Beli' muncul dan mengkliknya...",
       );
       const buyBtn = this.page
-        .locator('button:has-text("Buy"), button:has-text("Beli")')
+        .locator(
+          'button:has-text("Buy"), button:has-text("Beli"), ' +
+          '[role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"), ' +
+          'a:has-text("Buy"), a:has-text("Beli"), ' +
+          'button:has-text("Get"), button:has-text("Dapatkan"), ' +
+          '[role="button"]:has-text("Get"), [role="button"]:has-text("Dapatkan"), ' +
+          'a:has-text("Get"), a:has-text("Dapatkan"), ' +
+          'button:has-text("Checkout"), [role="button"]:has-text("Checkout")'
+        )
         .first();
       await this.waitForVisible(buyBtn);
       await buyBtn.click();
@@ -1055,7 +1063,7 @@ class TeamsBot {
           teamsPage
             .locator("#loading-screen")
             .waitFor({ state: "hidden", timeout: 120000 })
-            .catch(() => {}),
+            .catch(() => { }),
           startTrialBtn.waitFor({ state: "visible", timeout: 120000 }),
         ]);
 
@@ -1073,7 +1081,7 @@ class TeamsBot {
         );
 
         // Scroll ke button lalu klik
-        await startTrialBtn.scrollIntoViewIfNeeded().catch(() => {});
+        await startTrialBtn.scrollIntoViewIfNeeded().catch(() => { });
         await startTrialBtn.click();
 
         // Menunggu loading setelah klik start trial selesai sebelum close
@@ -1087,7 +1095,7 @@ class TeamsBot {
         const teamsSpinner = teamsPage.locator(SPINNER_SELECTOR).first();
         await teamsSpinner
           .waitFor({ state: "visible", timeout: 5000 })
-          .catch(() => {});
+          .catch(() => { });
         const isSpinning = await teamsSpinner.isVisible().catch(() => false);
         if (isSpinning) {
           await teamsSpinner
@@ -1105,13 +1113,13 @@ class TeamsBot {
           "✅ Aktivasi uji coba selesai. Menutup tab Teams...",
         );
       } catch (err) {
-        await teamsPage.close().catch(() => {});
+        await teamsPage.close().catch(() => { });
         throw new Error(
           "START_TRIAL_NOT_FOUND: Tombol 'Start trial' gagal ditemukan setelah Teams terbuka.",
         );
       }
       // Close the teams tab after trial
-      await teamsPage.close().catch(() => {});
+      await teamsPage.close().catch(() => { });
 
       // 24. Balik lagi ke admin user (original tab)
       await remoteLogger.logStep(
@@ -1194,7 +1202,7 @@ class TeamsBot {
           .locator('input[type="checkbox"]')
           .first()
           .waitFor({ state: "visible", timeout: 15000 })
-          .catch(() => {});
+          .catch(() => { });
 
         // Debug: log semua lisensi yang tersedia di halaman
         const allLicenseTexts = await this.page
