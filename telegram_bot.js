@@ -198,8 +198,9 @@ function initializeBotHandlers(bot) {
 
           if (result.status === "SUCCESS") {
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
+            // Calculate WIB (UTC+7) manually and format without the 'true' flag
             const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
-            message += `Time: <code>${date.format(nowWib, "DD MMM YYYY HH:mm", true)}</code>\n`;
+            message += `Time: <code>${date.format(nowWib, "DD MMM YYYY HH:mm")}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           } else {
