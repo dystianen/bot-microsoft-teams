@@ -166,6 +166,10 @@ function initializeBotHandlers(bot) {
       let globalIdx = 0;
       const originalTotal = session.accounts.length;
       const pendingPromises = new Set();
+      const queueResults = {
+        success: [],
+        failed: [],
+      };
 
       const processAccount = async (accountData, currentIdx) => {
         await safeSendMessage(
@@ -197,6 +201,7 @@ function initializeBotHandlers(bot) {
           await historyRecord.save().catch((e) => {});
 
           if (result.status === "SUCCESS") {
+            queueResults.success.push({ email: accountData.email });
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
             // Calculate WIB (UTC+7) manually and format without the 'true' flag
             const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
@@ -204,11 +209,19 @@ function initializeBotHandlers(bot) {
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           } else {
+            queueResults.failed.push({
+              email: accountData.email,
+              log: result.log,
+            });
             let message = `❌ <b>Failed [${currentIdx}/${originalTotal}] for ${escapeHTML(accountData.email)}</b>\n`;
             message += `Log: ${escapeHTML(result.log || "Unknown error")}`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           }
         } catch (err) {
+          queueResults.failed.push({
+            email: accountData.email,
+            log: err.message,
+          });
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
           const failRecord = new AccountHistory({
             email: accountData.email,
@@ -273,6 +286,28 @@ function initializeBotHandlers(bot) {
             mainMenu,
           );
         } else {
+          // Send summary to remoteLogger
+          let summaryMsg = `🏁 <b>Batch Queue Finished</b>\n`;
+          summaryMsg += `Total: <code>${originalTotal}</code> | ✅ Success: <code>${queueResults.success.length}</code> | ❌ Failed: <code>${queueResults.failed.length}</code>\n\n`;
+
+          if (queueResults.success.length > 0) {
+            summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
+            queueResults.success.forEach((r, i) => {
+              summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
+            });
+            summaryMsg += `────────────────\n`;
+          }
+
+          if (queueResults.failed.length > 0) {
+            summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
+            queueResults.failed.forEach((r, i) => {
+              summaryMsg += `${i + 1}. ❌ <code>${escapeHTML(r.email)}</code>\n`;
+              summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || "No log")}</i>\n`;
+              summaryMsg += `────────────────\n`;
+            });
+          }
+
+          await remoteLogger.send(summaryMsg);
           await remoteLogger.reportSystemStatus("(Queue Finished)");
           bot.sendMessage(
             chatId,
