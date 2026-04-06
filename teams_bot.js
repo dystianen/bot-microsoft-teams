@@ -711,6 +711,20 @@ class TeamsBot {
         .catch(() => { });
       await this.waitForSpinnerGone(3000);
 
+      // Check for 'This product is unavailable' or 'You are not eligible'
+      console.log("[INFO] Checking for product availability...");
+      const unavailableMarker = this.page
+        .locator(
+          'text="This product is unavailable", text="Produk ini tidak tersedia", text="You are not eligible", text="Anda tidak memenuhi syarat"'
+        )
+        .first();
+      
+      const isUnavailable = await unavailableMarker.isVisible({ timeout: 5000 }).catch(() => false);
+      if (isUnavailable) {
+        const errorText = await unavailableMarker.innerText().catch(() => "Produk tidak tersedia");
+        throw new Error(`MARKETPLACE_ERROR: ${errorText}. Bot tidak dapat melanjutkan dengan akun ini.`);
+      }
+
       // Remaining steps will adapt based on the product defined above.
 
       // 15.5 Select a plan
