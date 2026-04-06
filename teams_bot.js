@@ -1050,7 +1050,7 @@ class TeamsBot {
         .first();
 
       const permissionErrorLocator = teamsPage
-        .getByText("You don't have the required permissions to access this org")
+        .getByText(/You don't have the required permissions to access this org|Anda tidak memiliki izin yang diperlukan untuk mengakses organisasi ini/i)
         .first();
 
       try {
