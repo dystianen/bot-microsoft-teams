@@ -761,91 +761,81 @@ class TeamsBot {
         }
       }
 
-      // 15.7 Select commitment (Robust split checks)
-      console.log("[STEP 15.7] Checking for commitment options...");
-      await this.page.waitForTimeout(3000); // Tunggu ekstra karena opsi sering muncul belakangan
-
-      if (isCopilot) {
-        console.log("[INFO] Attempting selection for Copilot (1 year)...");
-        try {
-          const oneYear = this.page
-            .locator('label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 Tahun"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")')
-            .first();
-          await oneYear.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
-          await oneYear.click({ timeout: 5000 });
-          console.log("[SUCCESS] '1 year' commitment selected.");
-          await this.page.waitForTimeout(1000);
-        } catch (e) {
-          console.log("[INFO] '1 year' option already selected or skipped.");
-        }
-      }
-
-      if (isBusinessAppsFree) {
-        console.log("[INFO] Attempting selection for Business Apps (1 month)...");
-        try {
-          const oneMonth = this.page
-            .locator('label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 Bulan"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")')
-            .first();
-          await oneMonth.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
-          await oneMonth.click({ timeout: 5000 });
-          console.log("[SUCCESS] '1 month' commitment selected.");
-          await this.page.waitForTimeout(1000);
-        } catch (e) {
-          console.log("[INFO] '1 month' option already selected or skipped.");
-        }
-      }
-
-      console.log("[STEP 16] Selecting 'Pay monthly' billing frequency...");
-      try {
-        const payMonthlyText = this.page
-          .locator('label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")')
-          .first();
-        await payMonthlyText.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
-        await payMonthlyText.click({ timeout: 5000 });
-        console.log("[INFO] 'Pay monthly' option clicked.");
-        await this.waitForSpinnerGone(2000);
-      } catch (e) {
-        console.log("[INFO] 'Pay monthly' option not clickable or already selected.");
-      }
-
       // 17. Menunggu button buy muncul lalu click
       await remoteLogger.logStep(
         email,
         17,
         "🛍️ Menunggu tombol 'Beli' muncul dan mengkliknya...",
       );
-      const buyBtn = this.page
-        .locator(
-          'button:has-text("Buy"), button:has-text("Beli"), ' +
-          '[role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"), ' +
-          'a:has-text("Buy"), a:has-text("Beli"), ' +
-          'button:has-text("Get"), button:has-text("Dapatkan"), ' +
-          '[role="button"]:has-text("Get"), [role="button"]:has-text("Dapatkan"), ' +
-          'a:has-text("Get"), a:has-text("Dapatkan"), ' +
-          'button:has-text("Checkout"), [role="button"]:has-text("Checkout")'
-        )
-        .first();
 
+      const buyBtn = this.page.locator('button:has-text("Buy"), button:has-text("Beli"), [role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"), button:has-text("Get"), button:has-text("Dapatkan"), button:has-text("Checkout")').first();
       await this.waitForVisible(buyBtn).catch(err => {
         throw new Error("BUY_BUTTON_NOT_FOUND: Tombol 'Buy/Beli' tidak ditemukan di halaman marketplace.");
       });
-      
-      // Keamanan tambahan: Scroll ke tombol dan cek apakah tombol disabled
-      console.log("[INFO] Scrolling to 'Buy' button...");
-      await buyBtn.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => { });
-      
-      const isDisabled = await buyBtn.evaluate((btn) => {
-        return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('is-disabled');
-      }).catch(() => false);
 
-      if (isDisabled) {
-        console.warn("[WARN] Tombol 'Buy' terdeteksi tetapi dalam status DISABLED. Menunggu 5 detik lagi...");
-        await this.page.waitForTimeout(5000);
+      // 15.7 & 16: Pemilihan Commitment & Billing Frequency (dengan Re-check silang)
+      let buyBtnReady = false;
+      for (let retry = 1; retry <= 3; retry++) {
+        console.log(`[STEP 15.7/16] Attempt ${retry}: Ensuring options are selected...`);
+        
+        if (isCopilot) {
+          const oneYear = this.page.locator('label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 Tahun"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")').first();
+          await oneYear.click({ timeout: 5000 }).catch(() => {});
+        }
+        
+        if (isBusinessAppsFree) {
+          const oneMonth = this.page.locator('label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 Bulan"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")').first();
+          await oneMonth.click({ timeout: 5000 }).catch(() => {});
+        }
+
+        const payMonthly = this.page.locator('label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")').first();
+        await payMonthly.click({ timeout: 5000 }).catch(() => {});
+        
+        await this.page.waitForTimeout(2500);
+
+        // Cek apakah tombol Buy sudah ENABLED?
+        const isStillDisabled = await buyBtn.evaluate((btn) => {
+          return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('is-disabled');
+        }).catch(() => true);
+
+        if (!isStillDisabled) {
+          console.log("[SUCCESS] Options registered, Buy button is now ENABLED.");
+          buyBtnReady = true;
+          break;
+        }
+        
+        console.warn(`[WARN] Buy button still disabled after attempt ${retry}. Retrying selection...`);
+        if (retry === 3) {
+          throw new Error("BUY_BUTTON_LOCKED: Tombol 'Buy' tetap terkunci (disabled) setelah 3x percobaan pemilihan opsi. Periksa apakah akun ini memiliki batasan produk atau metode pembayaran.");
+        }
       }
 
-      await buyBtn.click({ timeout: 30000 }).catch(err => {
-        throw new Error("BUY_CLICK_FAILED: Tidak bisa mengklik tombol 'Buy/Beli', mungkin terhalang elemen lain.");
-      });
+      let clickedSuccessfully = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[INFO] Attempting to click 'Buy' button (Attempt ${attempt})...`);
+        const oldUrl = this.page.url();
+        
+        // Gunakan force: true hanya sebagai pengaman tambahan jika transisi butuh trigger lebih keras
+        await buyBtn.click({ timeout: 10000, force: true }).catch(() => { });
+        await this.page.waitForTimeout(3000);
+
+        // Verifikasi apakah klik berhasil (URL berubah atau tombol hilang)
+        const newUrl = this.page.url();
+        const isBtnStillVisible = await buyBtn.isVisible().catch(() => false);
+        
+        if (newUrl !== oldUrl || !isBtnStillVisible) {
+          console.log("[SUCCESS] 'Buy' click triggered page transition.");
+          clickedSuccessfully = true;
+          break;
+        }
+
+        console.warn("[WARN] 'Buy' click didn't seem to trigger anything. Retrying...");
+        await this.page.waitForTimeout(2000);
+      }
+
+      if (!clickedSuccessfully) {
+        throw new Error("BUY_CLICK_NOP: Klik tombol 'Buy' tidak memberikan respon setelah transisi paksa.");
+      }
       await this.waitForSpinnerGone(15000);
 
       console.log("[STEP 18] Checking for authorization checkboxes...");
