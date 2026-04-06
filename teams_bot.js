@@ -768,7 +768,16 @@ class TeamsBot {
         "🛍️ Menunggu tombol 'Beli' muncul dan mengkliknya...",
       );
 
-      const buyBtn = this.page.locator('button:has-text("Buy"), button:has-text("Beli"), [role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"), button:has-text("Get"), button:has-text("Dapatkan"), button:has-text("Checkout")').first();
+      const buyBtn = this.page.locator(`
+        button:has-text("Buy"), button:has-text("Beli"), 
+        [role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"), 
+        a:has-text("Buy"), a:has-text("Beli"),
+        button:has-text("Get"), button:has-text("Dapatkan"), 
+        [role="button"]:has-text("Get"), [role="button"]:has-text("Dapatkan"),
+        a:has-text("Get"), a:has-text("Dapatkan"),
+        button:has-text("Checkout"), [role="button"]:has-text("Checkout"), a:has-text("Checkout")
+      `).first();
+      
       await this.waitForVisible(buyBtn).catch(err => {
         throw new Error("BUY_BUTTON_NOT_FOUND: Tombol 'Buy/Beli' tidak ditemukan di halaman marketplace.");
       });
@@ -780,22 +789,31 @@ class TeamsBot {
         
         if (isCopilot) {
           const oneYear = this.page.locator('label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 Tahun"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")').first();
-          await oneYear.click({ timeout: 5000 }).catch(() => {});
+          await oneYear.click({ timeout: 5000 }).catch(async () => {
+             // Fallback: click visual container
+             await this.page.locator('.ms-Checkbox:has-text("1 year"), .ms-Checkbox:has-text("1 tahun")').first().click({ force: true, timeout: 3000 }).catch(() => {});
+          });
         }
         
         if (isBusinessAppsFree) {
           const oneMonth = this.page.locator('label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 Bulan"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")').first();
-          await oneMonth.click({ timeout: 5000 }).catch(() => {});
+          await oneMonth.click({ timeout: 5000 }).catch(async () => {
+             // Fallback: click visual container
+             await this.page.locator('.ms-Checkbox:has-text("1 month"), .ms-Checkbox:has-text("1 bulan")').first().click({ force: true, timeout: 3000 }).catch(() => {});
+          });
         }
 
         const payMonthly = this.page.locator('label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")').first();
-        await payMonthly.click({ timeout: 5000 }).catch(() => {});
+        await payMonthly.click({ timeout: 5000 }).catch(async () => {
+           // Fallback: click visual container
+           await this.page.locator('.ms-Checkbox:has-text("Pay monthly"), .ms-Checkbox:has-text("Bayar bulanan")').first().click({ force: true, timeout: 3000 }).catch(() => {});
+        });
         
-        await this.page.waitForTimeout(2500);
+        await this.page.waitForTimeout(3000); // Wait for potential state changes
 
         // Cek apakah tombol Buy sudah ENABLED?
         const isStillDisabled = await buyBtn.evaluate((btn) => {
-          return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('is-disabled');
+          return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('is-disabled') || btn.getAttribute('disabled') !== null;
         }).catch(() => true);
 
         if (!isStillDisabled) {
