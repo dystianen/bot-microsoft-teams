@@ -761,35 +761,38 @@ class TeamsBot {
         }
       }
 
-      // 15.7 Select '1 year' commitment if present (Only for Copilot)
+      // 15.7 Select commitment (Robust split checks)
+      console.log("[STEP 15.7] Checking for commitment options...");
+      await this.page.waitForTimeout(3000); // Tunggu ekstra karena opsi sering muncul belakangan
+
       if (isCopilot) {
-        console.log("[STEP 15.7] Selecting '1 year' commitment (Copilot)...");
+        console.log("[INFO] Attempting selection for Copilot (1 year)...");
         try {
-          const oneYearText = this.page
+          const oneYear = this.page
             .locator('label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 Tahun"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")')
             .first();
-          await oneYearText.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
-          await oneYearText.click({ timeout: 5000 });
-          console.log("[INFO] '1 year' option clicked.");
+          await oneYear.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
+          await oneYear.click({ timeout: 5000 });
+          console.log("[SUCCESS] '1 year' commitment selected.");
+          await this.page.waitForTimeout(1000);
         } catch (e) {
-          console.log("[INFO] '1 year' option not clickable or already selected.");
+          console.log("[INFO] '1 year' option already selected or skipped.");
         }
-      } else if (isBusinessAppsFree) {
-        console.log("[STEP 15.7] Selecting '1 month' commitment (Business Apps)...");
+      }
+
+      if (isBusinessAppsFree) {
+        console.log("[INFO] Attempting selection for Business Apps (1 month)...");
         try {
-          const oneMonthText = this.page
+          const oneMonth = this.page
             .locator('label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 Bulan"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")')
             .first();
-          await oneMonthText.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
-          await oneMonthText.click({ timeout: 5000 });
-          console.log("[INFO] '1 month' option clicked.");
+          await oneMonth.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
+          await oneMonth.click({ timeout: 5000 });
+          console.log("[SUCCESS] '1 month' commitment selected.");
+          await this.page.waitForTimeout(1000);
         } catch (e) {
-          console.log("[INFO] '1 month' option not clickable or already selected.");
+          console.log("[INFO] '1 month' option already selected or skipped.");
         }
-      } else {
-        console.log(
-          "[STEP 15.7] Skipping commitment selection for non-Copilot product.",
-        );
       }
 
       console.log("[STEP 16] Selecting 'Pay monthly' billing frequency...");
