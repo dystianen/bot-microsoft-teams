@@ -763,31 +763,28 @@ class TeamsBot {
 
       // 15.7 Select '1 year' commitment if present (Only for Copilot)
       if (isCopilot) {
-        console.log("[STEP 15.7] Selecting '1 year' commitment...");
+        console.log("[STEP 15.7] Selecting '1 year' commitment (Copilot)...");
         try {
           const oneYearText = this.page
-            .locator(
-              ':text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")',
-            )
+            .locator('label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 Tahun"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")')
             .first();
-          await oneYearText.waitFor({ state: "visible", timeout: 5000 });
-          console.log("[INFO] '1 year' option found, clicking...");
-          await oneYearText.click();
+          await oneYearText.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
+          await oneYearText.click({ timeout: 5000 });
+          console.log("[INFO] '1 year' option clicked.");
         } catch (e) {
-          console.log(
-            "[INFO] '1 year' option not found or already selected, continuing...",
-          );
+          console.log("[INFO] '1 year' option not clickable or already selected.");
         }
       } else if (isBusinessAppsFree) {
-        console.log("[STEP 15.7] Selecting '1 month' commitment...");
+        console.log("[STEP 15.7] Selecting '1 month' commitment (Business Apps)...");
         try {
-          const oneMonthText = this.page.getByText(/1\s*month|1\s*bulan/i).first();
-          console.log("[INFO] '1 month' option found, clicking...");
-          await oneMonthText.click();
+          const oneMonthText = this.page
+            .locator('label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 Bulan"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")')
+            .first();
+          await oneMonthText.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
+          await oneMonthText.click({ timeout: 5000 });
+          console.log("[INFO] '1 month' option clicked.");
         } catch (e) {
-          console.log(
-            "[INFO] '1 month' option not found or already selected, continuing...",
-          );
+          console.log("[INFO] '1 month' option not clickable or already selected.");
         }
       } else {
         console.log(
@@ -795,20 +792,17 @@ class TeamsBot {
         );
       }
 
-      // 16. Select 'Pay monthly'
       console.log("[STEP 16] Selecting 'Pay monthly' billing frequency...");
       try {
         const payMonthlyText = this.page
-          .locator(':text-is("Pay monthly"), :text-is("Bayar bulanan")')
+          .locator('label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")')
           .first();
-        await payMonthlyText.waitFor({ state: "visible", timeout: 5000 });
-        console.log("[INFO] 'Pay monthly' option found, clicking...");
-        await payMonthlyText.click();
+        await payMonthlyText.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => { });
+        await payMonthlyText.click({ timeout: 5000 });
+        console.log("[INFO] 'Pay monthly' option clicked.");
         await this.waitForSpinnerGone(2000);
       } catch (e) {
-        console.log(
-          "[INFO] 'Pay monthly' option not found or already selected, continuing...",
-        );
+        console.log("[INFO] 'Pay monthly' option not clickable or already selected.");
       }
 
       // 17. Menunggu button buy muncul lalu click
@@ -828,8 +822,27 @@ class TeamsBot {
           'button:has-text("Checkout"), [role="button"]:has-text("Checkout")'
         )
         .first();
-      await this.waitForVisible(buyBtn);
-      await buyBtn.click();
+
+      await this.waitForVisible(buyBtn).catch(err => {
+        throw new Error("BUY_BUTTON_NOT_FOUND: Tombol 'Buy/Beli' tidak ditemukan di halaman marketplace.");
+      });
+      
+      // Keamanan tambahan: Scroll ke tombol dan cek apakah tombol disabled
+      console.log("[INFO] Scrolling to 'Buy' button...");
+      await buyBtn.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => { });
+      
+      const isDisabled = await buyBtn.evaluate((btn) => {
+        return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('is-disabled');
+      }).catch(() => false);
+
+      if (isDisabled) {
+        console.warn("[WARN] Tombol 'Buy' terdeteksi tetapi dalam status DISABLED. Menunggu 5 detik lagi...");
+        await this.page.waitForTimeout(5000);
+      }
+
+      await buyBtn.click({ timeout: 30000 }).catch(err => {
+        throw new Error("BUY_CLICK_FAILED: Tidak bisa mengklik tombol 'Buy/Beli', mungkin terhalang elemen lain.");
+      });
       await this.waitForSpinnerGone(15000);
 
       console.log("[STEP 18] Checking for authorization checkboxes...");
