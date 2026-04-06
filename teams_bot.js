@@ -767,12 +767,7 @@ class TeamsBot {
       } else if (isBusinessAppsFree) {
         console.log("[STEP 15.7] Selecting '1 month' commitment...");
         try {
-          const oneMonthText = this.page
-            .locator(
-              ':text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")',
-            )
-            .first();
-          await oneMonthText.waitFor({ state: "visible", timeout: 5000 });
+          const oneMonthText = this.page.getByText(/1\s*month|1\s*bulan/i).first();
           console.log("[INFO] '1 month' option found, clicking...");
           await oneMonthText.click();
         } catch (e) {
