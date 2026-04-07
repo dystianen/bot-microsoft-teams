@@ -3,7 +3,6 @@ const config = require("./config");
 const { processSingleAccount } = require("./index");
 const connectDB = require("./db");
 const { AccountHistory, UserConfig } = require("./models");
-const date = require("date-and-time");
 const remoteLogger = require("./remote_logger");
 
 // Global state for graceful shutdown
@@ -186,7 +185,7 @@ function initializeBotHandlers(bot) {
 
     bot.sendMessage(
       chatId,
-      `🚀 Starting batch for ${session.accounts.length} accounts...\n(Launching every 5 seconds, max ${userConf.concurrencyLimit} active windows)`,
+      `🚀 Starting batch for ${session.accounts.length} accounts...\n(Max ${userConf.concurrencyLimit} active windows)`,
     );
 
     const runQueue = async () => {
