@@ -179,7 +179,7 @@ class TeamsBot {
           );
           return true;
         }
-      } catch (e) { }
+      } catch (e) {}
     }
 
     // 2. Fallback: Playwright native click di Main Page & Semua Frames
@@ -216,7 +216,7 @@ class TeamsBot {
           );
           return true;
         }
-      } catch (e) { }
+      } catch (e) {}
     }
 
     console.error(`[ERROR] Button not found in any frame for names:`, names);
@@ -311,7 +311,7 @@ class TeamsBot {
             foundSomethingVisible = true;
             break; // Break the frame loop to start over from attempt
           }
-        } catch (e) { }
+        } catch (e) {}
       }
     }
   }
@@ -382,11 +382,20 @@ class TeamsBot {
       ]);
 
       // --- STEP 3 VERIFICATION (CHECKPOINT) ---
-      console.log("[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...");
-      const passwordOrPrompt = this.page.locator('input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya")');
-      await passwordOrPrompt.first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {
-        throw new Error("EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. Cek apakah email sudah benar atau ada error di halaman.");
-      });
+      console.log(
+        "[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...",
+      );
+      const passwordOrPrompt = this.page.locator(
+        'input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya")',
+      );
+      await passwordOrPrompt
+        .first()
+        .waitFor({ state: "visible", timeout: 15000 })
+        .catch(() => {
+          throw new Error(
+            "EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. Cek apakah email sudah benar atau ada error di halaman.",
+          );
+        });
 
       // 3.5 Handle "Choose a way to sign in" if it appears
       console.log(
@@ -454,7 +463,9 @@ class TeamsBot {
             await this.humanDelay(1000, 1500);
             continue;
           } catch (e) {
-            console.log("[WARN] 'Yes' button blocked or failed, checking popups...");
+            console.log(
+              "[WARN] 'Yes' button blocked or failed, checking popups...",
+            );
           }
         }
 
@@ -488,7 +499,9 @@ class TeamsBot {
             await this.humanDelay(1000, 1500);
             continue;
           } catch (e) {
-            console.log("[WARN] 'Use Password' prompt blocked, checking popups...");
+            console.log(
+              "[WARN] 'Use Password' prompt blocked, checking popups...",
+            );
           }
         }
 
@@ -583,7 +596,7 @@ class TeamsBot {
           .locator(checkboxSelector)
           .first()
           .waitFor({ state: "visible", timeout: 15000 })
-          .catch(() => { });
+          .catch(() => {});
         await this.page.waitForTimeout(800);
 
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -651,88 +664,113 @@ class TeamsBot {
 
       // Wait for completion message
       console.log("[INFO] Waiting for save completion...");
-      await this.waitForSpinnerGone(800);
-      // 12. Navigating to product URL from config
-      const catalogUrl =
-        this.accountConfig.productUrl ||
-        "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
-      const isTeamsRooms = catalogUrl.includes("microsoft-teams-rooms-basic");
-      const isPhoneSystem = catalogUrl.includes("phone-system");
-      const isCopilot = catalogUrl.includes("copilot");
-      const isBusinessAppsFree = catalogUrl.includes("business-apps-free-");
-
-      let planName = "Microsoft 365 Copilot"; // Fallback
-      if (isTeamsRooms) planName = "Microsoft Teams Rooms Basic";
-      else if (isPhoneSystem) planName = "Microsoft 365 Phone System";
-      else if (isBusinessAppsFree) planName = "Business Apps (free)";
-
-      await remoteLogger.logStep(
-        email,
-        12,
-        `🛒 Membuka halaman Marketplace untuk produk: ${planName}...`,
-      );
-      await this.page.goto(catalogUrl, {
-        waitUntil: "commit",
-        timeout: HARD_TIMEOUT,
-      });
-      await this.waitForSpinnerGone(800);
-
-      // Check for 'This product is unavailable' or 'You are not eligible'
-      console.log("[INFO] Checking for product availability...");
-      const unavailableMarker = this.page
-        .locator(
-          'text="This product is unavailable", text="Produk ini tidak tersedia", text="You are not eligible", text="Anda tidak memenuhi syarat"'
-        )
-        .first();
-
-      const isUnavailable = await unavailableMarker.isVisible({ timeout: 5000 }).catch(() => false);
-      if (isUnavailable) {
-        const errorText = await unavailableMarker.innerText().catch(() => "Produk tidak tersedia");
-        throw new Error(`MARKETPLACE_ERROR: ${errorText}. Bot tidak dapat melanjutkan dengan akun ini.`);
-      }
-
-      // 15.5 Select a plan
-      if (!isBusinessAppsFree) {
-        console.log(`[STEP 15.5] Selecting '${planName}' plan...`);
-        const planDropdown = this.page
-          .locator(
-            'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"], div:has-text("Pilih paket") select, [aria-label*="Pilih paket" i], div:has-text("Pilih paket") [role="combobox"]',
-          )
-          .first();
-        await this.waitForVisible(planDropdown);
-
+      // --- PURCHASE RETRY LOOP (Step 12 - 20) ---
+      let purchaseSuccess = false;
+      for (let purchaseAttempt = 1; purchaseAttempt <= 3; purchaseAttempt++) {
         try {
-          const tagName = await planDropdown.evaluate((el) =>
-            el.tagName.toLowerCase(),
-          );
-          if (tagName === "select") {
-            await planDropdown.selectOption({ label: planName });
-          } else {
-            await planDropdown.click();
-            await this.humanDelay(1000, 1500);
-            const option = this.page.getByRole("option", {
-              name: new RegExp(
-                `^${planName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-                "i",
-              ),
-            });
-            await option.click();
+          if (purchaseAttempt > 1) {
+            await remoteLogger.logStep(
+              email,
+              12,
+              `🔄 Mencoba ulang proses pembelian (Percobaan ke-${purchaseAttempt}/3)...`,
+            );
+            await this.page.reload({ waitUntil: "domcontentloaded" });
+            await this.waitForSpinnerGone(2000);
           }
-        } catch (err) {
-          console.warn(
-            `[WARN] Failed to select plan '${planName}' explicitly, it might be already selected. Continuing...`,
+
+          // 12. Navigating to product URL from config
+          const catalogUrl =
+            this.accountConfig.productUrl ||
+            "https://admin.cloud.microsoft/?#/catalog/m/offer-details/microsoft-teams-rooms-basic/CFQ7TTC0QW5P";
+          const isTeamsRooms = catalogUrl.includes(
+            "microsoft-teams-rooms-basic",
           );
-        }
-      }
+          const isPhoneSystem = catalogUrl.includes("phone-system");
+          const isCopilot = catalogUrl.includes("copilot");
+          const isBusinessAppsFree = catalogUrl.includes("business-apps-free-");
 
-      // 17. Menunggu button buy muncul lalu click
-      await remoteLogger.logStep(
-        email,
-        17,
-        "🛍️ Menunggu tombol 'Beli' muncul dan mengkliknya...",
-      );
+          let planName = "Microsoft 365 Copilot"; // Fallback
+          if (isTeamsRooms) planName = "Microsoft Teams Rooms Basic";
+          else if (isPhoneSystem) planName = "Microsoft 365 Phone System";
+          else if (isBusinessAppsFree) planName = "Business Apps (free)";
 
-      const buyBtn = this.page.locator(`
+          if (purchaseAttempt === 1 || this.page.url() !== catalogUrl) {
+            await remoteLogger.logStep(
+              email,
+              12,
+              `🛒 Membuka halaman Marketplace untuk produk: ${planName}...`,
+            );
+            await this.page.goto(catalogUrl, {
+              waitUntil: "commit",
+              timeout: HARD_TIMEOUT,
+            });
+            await this.waitForSpinnerGone(800);
+          }
+
+          // Check for 'This product is unavailable' or 'You are not eligible'
+          console.log("[INFO] Checking for product availability...");
+          const unavailableMarker = this.page
+            .locator(
+              'text="This product is unavailable", text="Produk ini tidak tersedia", text="You are not eligible", text="Anda tidak memenuhi syarat"',
+            )
+            .first();
+
+          const isUnavailable = await unavailableMarker
+            .isVisible({ timeout: 5000 })
+            .catch(() => false);
+          if (isUnavailable) {
+            const errorText = await unavailableMarker
+              .innerText()
+              .catch(() => "Produk tidak tersedia");
+            throw new Error(
+              `MARKETPLACE_ERROR: ${errorText}. Bot tidak dapat melanjutkan dengan akun ini.`,
+            );
+          }
+
+          // 15.5 Select a plan
+          if (!isBusinessAppsFree) {
+            console.log(`[STEP 15.5] Selecting '${planName}' plan...`);
+            const planDropdown = this.page
+              .locator(
+                'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"], div:has-text("Pilih paket") select, [aria-label*="Pilih paket" i], div:has-text("Pilih paket") [role="combobox"]',
+              )
+              .first();
+            await this.waitForVisible(planDropdown);
+
+            try {
+              const tagName = await planDropdown.evaluate((el) =>
+                el.tagName.toLowerCase(),
+              );
+              if (tagName === "select") {
+                await planDropdown.selectOption({ label: planName });
+              } else {
+                await planDropdown.click();
+                await this.humanDelay(1000, 1500);
+                const option = this.page.getByRole("option", {
+                  name: new RegExp(
+                    `^${planName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+                    "i",
+                  ),
+                });
+                await option.click();
+              }
+            } catch (err) {
+              console.warn(
+                `[WARN] Failed to select plan '${planName}' explicitly, it might be already selected. Continuing...`,
+              );
+            }
+          }
+
+          // 17. Menunggu button buy muncul lalu click
+          await remoteLogger.logStep(
+            email,
+            17,
+            "🛍️ Menunggu tombol 'Beli' muncul dan mengkliknya...",
+          );
+
+          const buyBtn = this.page
+            .locator(
+              `
         button:has-text("Buy"), button:has-text("Beli"), 
         [role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"), 
         a:has-text("Buy"), a:has-text("Beli"),
@@ -740,260 +778,345 @@ class TeamsBot {
         [role="button"]:has-text("Get"), [role="button"]:has-text("Dapatkan"),
         a:has-text("Get"), a:has-text("Dapatkan"),
         button:has-text("Checkout"), [role="button"]:has-text("Checkout"), a:has-text("Checkout")
-      `).first();
-      
-      await this.waitForVisible(buyBtn).catch(() => {
-        throw new Error("BUY_BUTTON_NOT_FOUND");
-      });
+      `,
+            )
+            .first();
 
-      // 15.7 & 16: Pemilihan Commitment & Billing Frequency (dengan Re-check silang)
-      for (let retry = 1; retry <= 3; retry++) {
-        console.log(`[STEP 15.7/16] Attempt ${retry}: Ensuring options are selected...`);
-
-        if (isCopilot) {
-          const oneYear = this.page.locator('label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 Tahun"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")').first();
-          await oneYear.click({ timeout: 5000 }).catch(async () => {
-             // Fallback: click visual container
-             await this.page.locator('.ms-Checkbox:has-text("1 year"), .ms-Checkbox:has-text("1 tahun")').first().click({ force: true, timeout: 3000 }).catch(() => {});
+          await this.waitForVisible(buyBtn).catch(() => {
+            throw new Error("BUY_BUTTON_NOT_FOUND");
           });
-        }
 
-        if (isBusinessAppsFree) {
-          const oneMonth = this.page.locator('label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 Bulan"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")').first();
-          await oneMonth.click({ timeout: 5000 }).catch(async () => {
-             // Fallback: click visual container
-             await this.page.locator('.ms-Checkbox:has-text("1 month"), .ms-Checkbox:has-text("1 bulan")').first().click({ force: true, timeout: 3000 }).catch(() => {});
-          });
-        }
+          // 15.7 & 16: Pemilihan Commitment & Billing Frequency (dengan Re-check silang)
+          for (let retry = 1; retry <= 3; retry++) {
+            console.log(
+              `[STEP 15.7/16] Attempt ${retry}: Ensuring options are selected...`,
+            );
 
-        const payMonthly = this.page.locator('label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")').first();
-        await payMonthly.click({ timeout: 5000 }).catch(async () => {
-           // Fallback: click visual container
-            await this.page.locator('.ms-Checkbox:has-text("Pay monthly"), .ms-Checkbox:has-text("Bayar bulanan")').first().click({ force: true, timeout: 3000 }).catch(() => {});
-        });
-        
-        await this.page.waitForTimeout(1000); // Wait for potential state changes
+            if (isCopilot) {
+              const oneYear = this.page
+                .locator(
+                  'label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 Tahun"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 Tahun")',
+                )
+                .first();
+              await oneYear.click({ timeout: 5000 }).catch(async () => {
+                // Fallback: click visual container
+                await this.page
+                  .locator(
+                    '.ms-Checkbox:has-text("1 year"), .ms-Checkbox:has-text("1 tahun")',
+                  )
+                  .first()
+                  .click({ force: true, timeout: 3000 })
+                  .catch(() => {});
+              });
+            }
 
-        const isStillDisabled = await buyBtn.evaluate((btn) => {
-          return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('is-disabled') || btn.getAttribute('disabled') !== null;
-        }).catch(() => true);
+            if (isBusinessAppsFree) {
+              const oneMonth = this.page
+                .locator(
+                  'label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 Bulan"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 Bulan")',
+                )
+                .first();
+              await oneMonth.click({ timeout: 5000 }).catch(async () => {
+                // Fallback: click visual container
+                await this.page
+                  .locator(
+                    '.ms-Checkbox:has-text("1 month"), .ms-Checkbox:has-text("1 bulan")',
+                  )
+                  .first()
+                  .click({ force: true, timeout: 3000 })
+                  .catch(() => {});
+              });
+            }
 
-        if (!isStillDisabled) {
-          console.log("[SUCCESS] Options registered, Buy button is now ENABLED.");
-          break;
-        }
+            const payMonthly = this.page
+              .locator(
+                'label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")',
+              )
+              .first();
+            await payMonthly.click({ timeout: 5000 }).catch(async () => {
+              // Fallback: click visual container
+              await this.page
+                .locator(
+                  '.ms-Checkbox:has-text("Pay monthly"), .ms-Checkbox:has-text("Bayar bulanan")',
+                )
+                .first()
+                .click({ force: true, timeout: 3000 })
+                .catch(() => {});
+            });
 
-        console.warn(`[WARN] Buy button still disabled after attempt ${retry}. Retrying selection...`);
+            await this.page.waitForTimeout(1000); // Wait for potential state changes
 
-        if (retry === 3) {
-          throw new Error("BUY_BUTTON_LOCKED: Tombol 'Buy' tetap terkunci...");
-        }
-      }
+            const isStillDisabled = await buyBtn
+              .evaluate((btn) => {
+                return (
+                  btn.disabled ||
+                  btn.getAttribute("aria-disabled") === "true" ||
+                  btn.classList.contains("is-disabled") ||
+                  btn.getAttribute("disabled") !== null
+                );
+              })
+              .catch(() => true);
 
-      let clickedSuccessfully = false;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        console.log(`[INFO] Attempting to click 'Buy' button (Attempt ${attempt})...`);
-        const oldUrl = this.page.url();
+            if (!isStillDisabled) {
+              console.log(
+                "[SUCCESS] Options registered, Buy button is now ENABLED.",
+              );
+              break;
+            }
 
-        // Gunakan force: true hanya sebagai pengaman tambahan jika transisi butuh trigger lebih keras
-        await buyBtn.click({ timeout: 10000, force: true }).catch(() => { });
-        await this.page.waitForTimeout(1500);
+            console.warn(
+              `[WARN] Buy button still disabled after attempt ${retry}. Retrying selection...`,
+            );
 
-        // Verifikasi apakah klik berhasil (URL berubah, tombol hilang, atau elemen step berikutnya muncul)
-        const newUrl = this.page.url();
-        const isBtnStillVisible = await buyBtn.isVisible().catch(() => false);
-        
-        const nextStepMarker = this.page.locator(`
+            if (retry === 3) {
+              throw new Error("BUY_BUTTON_LOCKED");
+            }
+          }
+
+          let clickedSuccessfully = false;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            console.log(
+              `[INFO] Attempting to click 'Buy' button (Attempt ${attempt})...`,
+            );
+            const oldUrl = this.page.url();
+
+            // Gunakan force: true hanya sebagai pengaman tambahan jika transisi butuh trigger lebih keras
+            await buyBtn.click({ timeout: 10000, force: true }).catch(() => {});
+            await this.page.waitForTimeout(1500);
+
+            // Verifikasi apakah klik berhasil (URL berubah, tombol hilang, atau elemen step berikutnya muncul)
+            const newUrl = this.page.url();
+            const isBtnStillVisible = await buyBtn
+              .isVisible()
+              .catch(() => false);
+
+            const nextStepMarker = this.page
+              .locator(
+                `
           .ms-Checkbox:has-text("authorize recurring payments"), 
           .ms-Checkbox:has-text("pembayaran berulang"),
           button:has-text("Place order"), 
           button:has-text("Buat pesanan"),
           button:has-text("Tempatkan pesanan")
-        `).first();
-        const isNextStepVisible = await nextStepMarker.isVisible().catch(() => false);
-
-        if (newUrl !== oldUrl || !isBtnStillVisible || isNextStepVisible) {
-          console.log("[SUCCESS] 'Buy' click triggered transition (URL change or Next Step detected).");
-          clickedSuccessfully = true;
-          break;
-        }
-
-        console.warn("[WARN] 'Buy' click didn't seem to trigger anything. Retrying...");
-        await this.page.waitForTimeout(1000);
-      }
-
-      if (!clickedSuccessfully) {
-        throw new Error("BUY_CLICK_NOP: Klik tombol 'Buy' tidak memberikan respon setelah transisi paksa.");
-      }
-      await this.waitForSpinnerGone(15000);
-
-      console.log("[STEP 18] Checking for authorization checkboxes...");
-      try {
-        // Cari container .ms-Checkbox yang mengandung teks recurring payments
-        const checkboxContainer = this.page
-          .locator(
-            '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang")',
-          )
-          .first();
-
-        const isVisible = await checkboxContainer
-          .isVisible({ timeout: 10000 })
-          .catch(() => false);
-
-        if (isVisible) {
-          console.log(
-            "[INFO] Authorization checkbox detected. Attempting to check...",
-          );
-
-          // Ambil input langsung dari dalam container (sibling bisa diakses lewat parent)
-          const checkboxInput = checkboxContainer
-            .locator('input[type="checkbox"]')
-            .first();
-
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const isChecked = await checkboxInput
-              .isChecked()
+        `,
+              )
+              .first();
+            const isNextStepVisible = await nextStepMarker
+              .isVisible()
               .catch(() => false);
-            if (isChecked) {
-              console.log("[INFO] Checkbox is already checked.");
+
+            if (newUrl !== oldUrl || !isBtnStillVisible || isNextStepVisible) {
+              console.log(
+                "[SUCCESS] 'Buy' click triggered transition (URL change or Next Step detected).",
+              );
+              clickedSuccessfully = true;
               break;
             }
 
-            console.log(`[INFO] Checking attempt ${attempt}...`);
+            console.warn(
+              "[WARN] 'Buy' click didn't seem to trigger anything. Retrying...",
+            );
+            await this.page.waitForTimeout(1000);
+          }
 
-            // Klik langsung di visual checkbox (kotak kecilnya), bukan label teks
-            const visualCheckbox = checkboxContainer
-              .locator(".ms-Checkbox-checkbox")
+          if (!clickedSuccessfully) {
+            throw new Error("BUY_CLICK_NOP");
+          }
+          await this.waitForSpinnerGone(15000);
+
+          console.log("[STEP 18] Checking for authorization checkboxes...");
+          try {
+            // Cari container .ms-Checkbox yang mengandung teks recurring payments
+            const checkboxContainer = this.page
+              .locator(
+                '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang")',
+              )
               .first();
 
-            await visualCheckbox.click({ force: true });
-            await this.page.waitForTimeout(800);
-
-            const nowChecked = await checkboxInput
-              .isChecked()
+            const isVisible = await checkboxContainer
+              .isVisible({ timeout: 10000 })
               .catch(() => false);
-            if (nowChecked) {
-              console.log("[SUCCESS] Checkbox is now checked.");
+
+            if (isVisible) {
+              console.log(
+                "[INFO] Authorization checkbox detected. Attempting to check...",
+              );
+
+              // Ambil input langsung dari dalam container (sibling bisa diakses lewat parent)
+              const checkboxInput = checkboxContainer
+                .locator('input[type="checkbox"]')
+                .first();
+
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                const isChecked = await checkboxInput
+                  .isChecked()
+                  .catch(() => false);
+                if (isChecked) {
+                  console.log("[INFO] Checkbox is already checked.");
+                  break;
+                }
+
+                console.log(`[INFO] Checking attempt ${attempt}...`);
+
+                // Klik langsung di visual checkbox (kotak kecilnya), bukan label teks
+                const visualCheckbox = checkboxContainer
+                  .locator(".ms-Checkbox-checkbox")
+                  .first();
+
+                await visualCheckbox.click({ force: true });
+                await this.page.waitForTimeout(800);
+
+                const nowChecked = await checkboxInput
+                  .isChecked()
+                  .catch(() => false);
+                if (nowChecked) {
+                  console.log("[SUCCESS] Checkbox is now checked.");
+                  break;
+                }
+
+                // Fallback: klik via JavaScript langsung ke input
+                if (attempt === 2) {
+                  console.log(
+                    "[INFO] Fallback: clicking input directly via JS...",
+                  );
+                  await checkboxInput.evaluate((el) => el.click());
+                  await this.page.waitForTimeout(800);
+                }
+
+                if (attempt === 3) {
+                  throw new Error(
+                    "Gagal mencentang checkbox otorisasi setelah 3x percobaan.",
+                  );
+                }
+              }
+            } else {
+              console.log(
+                "[INFO] No authorization checkbox found, skipping...",
+              );
+            }
+          } catch (err) {
+            throw new Error(`CRITICAL_ERROR di Step 18: ${err.message}`);
+          }
+
+          // 19. Place order (STRICT MODE)
+          await remoteLogger.logStep(
+            email,
+            19,
+            "📦 Mengklik tombol 'Buat Pesanan' untuk konfirmasi pembelian...",
+          );
+          const placeOrderBtn = this.page
+            .locator(
+              'button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan")',
+            )
+            .first();
+
+          console.log(
+            "[INFO] Waiting for 'Place order' button to become enabled...",
+          );
+          try {
+            await this.page.waitForFunction(
+              (btn) => {
+                return (
+                  btn &&
+                  !btn.disabled &&
+                  btn.getAttribute("aria-disabled") !== "true" &&
+                  !btn.classList.contains("is-disabled")
+                );
+              },
+              await placeOrderBtn.elementHandle(),
+              { timeout: 30000 },
+            );
+            console.log("[INFO] Button 'Place order' is now enabled.");
+          } catch (e) {
+            throw new Error(
+              "PLACE_ORDER_DISABLED: Tombol tidak aktif dalam 30 detik. Kemungkinan otorisasi gagal atau field ada yang kurang.",
+            );
+          }
+
+          await placeOrderBtn.click({ timeout: 10000 }).catch(async (e) => {
+            console.log("[INFO] Click failed, trying force click...");
+            await placeOrderBtn.click({ force: true });
+          });
+          console.log(
+            "[INFO] 'Place order' clicked. Waiting for confirmation...",
+          );
+
+          // 20. Verifikasi Transaksi Berhasil (STRICT)
+          await remoteLogger.logStep(
+            email,
+            20,
+            "🔎 Memverifikasi keberhasilan pesanan sebelum melanjutkan...",
+          );
+          const verifyStart = Date.now();
+
+          while (Date.now() - verifyStart < 60000) {
+            // Max 1 menit menunggu konfirmasi
+            // 20.1 Cek apakah tombol sudah hilang?
+            const isBtnHidden = await placeOrderBtn
+              .isHidden()
+              .catch(() => true);
+
+            // 20.2 Cek apakah URL menunjukkan konfirmasi atau ada teks sukses?
+            const currentUrl = this.page.url().toLowerCase();
+            const bodyContent = await this.page
+              .innerText("body")
+              .catch(() => "");
+            const successKeywords = [
+              "all set",
+              "confirmation",
+              "thanks",
+              "terima kasih",
+              "detail pesanan",
+              "order details",
+            ];
+            const foundKeyword = successKeywords.find((kw) =>
+              bodyContent.toLowerCase().includes(kw),
+            );
+
+            if (
+              isBtnHidden &&
+              (currentUrl.includes("confirmation") || foundKeyword)
+            ) {
+              console.log(
+                `[SUCCESS] Order placement verified! (Keyword found: "${foundKeyword || "URL Confirmation"}")`,
+              );
+              purchaseSuccess = true;
               break;
             }
 
-            // Fallback: klik via JavaScript langsung ke input
-            if (attempt === 2) {
-              console.log("[INFO] Fallback: clicking input directly via JS...");
-              await checkboxInput.evaluate((el) => el.click());
-              await this.page.waitForTimeout(800);
+            // 20.3 Cek apakah ada error muncul?
+            const detectedError = await this.checkForError();
+            if (detectedError) {
+              throw new Error(`PLACE_ORDER_FAILED: ${detectedError}`);
             }
 
-            if (attempt === 3) {
-              throw new Error(
-                "Gagal mencentang checkbox otorisasi setelah 3x percobaan.",
-              );
-            }
+            await this.page.waitForTimeout(800);
           }
-        } else {
-          console.log("[INFO] No authorization checkbox found, skipping...");
-        }
-      } catch (err) {
-        throw new Error(`CRITICAL_ERROR di Step 18: ${err.message}`);
-      }
 
-      // 19. Place order (STRICT MODE)
-      await remoteLogger.logStep(
-        email,
-        19,
-        "📦 Mengklik tombol 'Buat Pesanan' untuk konfirmasi pembelian...",
-      );
-      const placeOrderBtn = this.page
-        .locator(
-          'button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan")',
-        )
-        .first();
-
-      console.log(
-        "[INFO] Waiting for 'Place order' button to become enabled...",
-      );
-      try {
-        await this.page.waitForFunction(
-          (btn) => {
-            return (
-              btn &&
-              !btn.disabled &&
-              btn.getAttribute("aria-disabled") !== "true" &&
-              !btn.classList.contains("is-disabled")
+          if (!purchaseSuccess) {
+            console.warn(
+              "[WARN] Order confirmation not clearly detected, but button is gone. Proceeding with caution...",
             );
-          },
-          await placeOrderBtn.elementHandle(),
-          { timeout: 30000 },
-        );
-        console.log("[INFO] Button 'Place order' is now enabled.");
-      } catch (e) {
-        throw new Error(
-          "PLACE_ORDER_DISABLED: Tombol tidak aktif dalam 30 detik. Kemungkinan otorisasi gagal atau field ada yang kurang.",
-        );
-      }
+          }
 
-      await placeOrderBtn.click({ timeout: 10000 }).catch(async (e) => {
-        console.log("[INFO] Click failed, trying force click...");
-        await placeOrderBtn.click({ force: true });
-      });
-      console.log("[INFO] 'Place order' clicked. Waiting for confirmation...");
-
-      // 20. Verifikasi Transaksi Berhasil (STRICT)
-      await remoteLogger.logStep(
-        email,
-        20,
-        "🔎 Memverifikasi keberhasilan pesanan sebelum melanjutkan...",
-      );
-      let isSuccess = false;
-      const verifyStart = Date.now();
-
-      while (Date.now() - verifyStart < 60000) {
-        // Max 1 menit menunggu konfirmasi
-        // 20.1 Cek apakah tombol sudah hilang?
-        const isBtnHidden = await placeOrderBtn.isHidden().catch(() => true);
-
-        // 20.2 Cek apakah URL menunjukkan konfirmasi atau ada teks sukses?
-        const currentUrl = this.page.url().toLowerCase();
-        const bodyContent = await this.page.innerText("body").catch(() => "");
-        const successKeywords = [
-          "all set",
-          "confirmation",
-          "thanks",
-          "terima kasih",
-          "detail pesanan",
-          "order details",
-        ];
-        const foundKeyword = successKeywords.find((kw) =>
-          bodyContent.toLowerCase().includes(kw),
-        );
-
-        if (
-          isBtnHidden &&
-          (currentUrl.includes("confirmation") || foundKeyword)
-        ) {
-          console.log(
-            `[SUCCESS] Order placement verified! (Keyword found: "${foundKeyword || "URL Confirmation"}")`,
-          );
-          isSuccess = true;
-          break;
+          await this.waitForSpinnerGone(1000);
+          break; // EXIT RETRY LOOP IF SUCCESS!
+        } catch (err) {
+          if (
+            (err.message.includes("something happened") ||
+              err.message.includes("Terjadi kesalahan")) &&
+            purchaseAttempt < 3
+          ) {
+            console.warn(
+              `[RETRY] Purchase Failed with 'Something happened'. Attempt ${purchaseAttempt}/3. Reloading...`,
+            );
+            await this.page.reload({ waitUntil: "domcontentloaded" });
+            await this.page.waitForTimeout(5000);
+            continue;
+          }
+          throw err; // Persist other errors
         }
-
-        // 20.3 Cek apakah ada error muncul?
-        const detectedError = await this.checkForError();
-        if (detectedError) {
-          throw new Error(`PLACE_ORDER_FAILED: ${detectedError}`);
-        }
-
-        await this.page.waitForTimeout(800);
       }
-
-      if (!isSuccess) {
-        console.warn(
-          "[WARN] Order confirmation not clearly detected, but button is gone. Proceeding with caution...",
-        );
-      }
-
-      await this.waitForSpinnerGone(1000);
 
       // 21. Buka https://teams.microsoft.com/v2/ di tab baru
       await remoteLogger.logStep(
@@ -1007,16 +1130,18 @@ class TeamsBot {
           waitUntil: "domcontentloaded",
           timeout: HARD_TIMEOUT,
         });
-        
+
         // Final robustness check: if page is totally blank, try one refresh
         const bodyText = await teamsPage.innerText("body").catch(() => "");
         if (!bodyText || bodyText.trim().length === 0) {
-           console.log("[INFO] Teams page is blank, refreshing...");
-           await teamsPage.reload({ waitUntil: "domcontentloaded" });
+          console.log("[INFO] Teams page is blank, refreshing...");
+          await teamsPage.reload({ waitUntil: "domcontentloaded" });
         }
       } catch (e) {
         console.warn("[WARN] Initial Teams navigation failed, retrying...");
-        await teamsPage.goto("https://teams.microsoft.com/v2/", { waitUntil: "domcontentloaded" });
+        await teamsPage.goto("https://teams.microsoft.com/v2/", {
+          waitUntil: "domcontentloaded",
+        });
       }
 
       // 22 & 23 Combined: Faster detection for Teams state
@@ -1048,11 +1173,15 @@ class TeamsBot {
         .first();
 
       const permissionErrorLocator = teamsPage
-        .getByText(/You don't have the required permissions to access this org|Anda tidak memiliki izin yang diperlukan untuk mengakses organisasi ini/i)
+        .getByText(
+          /You don't have the required permissions to access this org|Anda tidak memiliki izin yang diperlukan untuk mengakses organisasi ini/i,
+        )
         .first();
 
       try {
-        console.log("[INFO] Waiting for Sign In, Start Trial, Pick Account, or Permission (Race 60s)...");
+        console.log(
+          "[INFO] Waiting for Sign In, Start Trial, Pick Account, or Permission (Race 60s)...",
+        );
         // Race between elements with an extended 60s timeout
         await teamsSignInBtn
           .or(startTrialBtn)
@@ -1062,20 +1191,32 @@ class TeamsBot {
 
         if (await permissionErrorLocator.isVisible().catch(() => false)) {
           console.error("[ERROR] Permission error page detected.");
-          throw new Error("Don't have the required permissions to access this org");
+          throw new Error(
+            "Don't have the required permissions to access this org",
+          );
         }
 
         // Handle "Pick an account" screen if it appears
         if (await pickAccountHeader.isVisible().catch(() => false)) {
-          console.log("[INFO] 'Pick an account' detected, looking for current user email...");
-          const targetAccountItem = teamsPage.locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`).first();
+          console.log(
+            "[INFO] 'Pick an account' detected, looking for current user email...",
+          );
+          const targetAccountItem = teamsPage
+            .locator(
+              `div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`,
+            )
+            .first();
           if (await targetAccountItem.isVisible().catch(() => false)) {
             await targetAccountItem.click();
             await teamsPage.waitForTimeout(2000);
           } else {
-             // Fallback: click first account tile
-             await teamsPage.locator('div[role="listitem"], .tile-container').first().click().catch(() => {});
-             await teamsPage.waitForTimeout(2000);
+            // Fallback: click first account tile
+            await teamsPage
+              .locator('div[role="listitem"], .tile-container')
+              .first()
+              .click()
+              .catch(() => {});
+            await teamsPage.waitForTimeout(2000);
           }
         }
 
@@ -1083,7 +1224,9 @@ class TeamsBot {
           console.log("[INFO] 'Sign in' button detected, clicking...");
           await teamsSignInBtn.click();
           await teamsPage.waitForTimeout(1500);
-          console.log("[INFO] Waiting for 'Start Trial' button to appear after Sign in...");
+          console.log(
+            "[INFO] Waiting for 'Start Trial' button to appear after Sign in...",
+          );
           await startTrialBtn.waitFor({ state: "visible", timeout: 45000 });
         } else {
           console.log("[INFO] Proceeding to Start Trial steps.");
@@ -1096,7 +1239,7 @@ class TeamsBot {
         );
 
         // Scroll ke button lalu klik
-        await startTrialBtn.scrollIntoViewIfNeeded().catch(() => { });
+        await startTrialBtn.scrollIntoViewIfNeeded().catch(() => {});
         await startTrialBtn.click();
 
         // Menunggu loading setelah klik start trial selesai sebelum close
@@ -1110,7 +1253,7 @@ class TeamsBot {
         const teamsSpinner = teamsPage.locator(SPINNER_SELECTOR).first();
         await teamsSpinner
           .waitFor({ state: "visible", timeout: 5000 })
-          .catch(() => { });
+          .catch(() => {});
         const isSpinning = await teamsSpinner.isVisible().catch(() => false);
         if (isSpinning) {
           await teamsSpinner
@@ -1128,14 +1271,14 @@ class TeamsBot {
           "✅ Aktivasi uji coba selesai. Menutup tab Teams...",
         );
       } catch (err) {
-        await teamsPage.close().catch(() => { });
+        await teamsPage.close().catch(() => {});
         if (err.message.includes("permissions")) throw err;
         throw new Error(
           `START_TRIAL_FAILED: ${err.message || "Gagal aktivasi trial Teams."}`,
         );
       }
       // Close the teams tab after trial
-      await teamsPage.close().catch(() => { });
+      await teamsPage.close().catch(() => {});
 
       // 24. Balik lagi ke admin user (original tab)
       await remoteLogger.logStep(
@@ -1218,7 +1361,7 @@ class TeamsBot {
           .locator('input[type="checkbox"]')
           .first()
           .waitFor({ state: "visible", timeout: 15000 })
-          .catch(() => { });
+          .catch(() => {});
 
         // Debug: log semua lisensi yang tersedia di halaman
         const allLicenseTexts = await this.page
@@ -1365,23 +1508,31 @@ class TeamsBot {
 
       // Error Mapping Dictionary (Human Friendly)
       if (errMsg.includes("BUY_BUTTON_NOT_FOUND")) {
-        userMsg = "❌ Step 17 Gagal: Tombol 'Beli' tidak ditemukan. Halaman Marketplace mungkin tidak memuat produk ini.";
+        userMsg =
+          "❌ Step 17 Gagal: Tombol 'Beli' tidak ditemukan. Halaman Marketplace mungkin tidak memuat produk ini.";
       } else if (errMsg.includes("BUY_BUTTON_LOCKED")) {
-        userMsg = "❌ Step 17 Gagal: Tombol 'Beli' terkunci (abu-abu). Cek kelengkapan data penagihan atau apakah produk masih tersedia.";
+        userMsg =
+          "❌ Step 17 Gagal: Tombol 'Beli' terkunci (abu-abu). Cek kelengkapan data penagihan atau apakah produk masih tersedia.";
       } else if (errMsg.includes("PLACE_ORDER_FAILED")) {
-        userMsg = "❌ Step 19 Gagal: Gagal saat menekan 'Buat Pesanan'. Microsoft mungkin menolak transaksi ini.";
+        userMsg =
+          "❌ Step 19 Gagal: Gagal saat menekan 'Buat Pesanan'. Microsoft mungkin menolak transaksi ini.";
       } else if (errMsg.includes("START_TRIAL_FAILED")) {
-        userMsg = "❌ Step 23 Gagal: Gagal aktivasi trial Teams. Mungkin trial sudah pernah atau sedang aktif.";
+        userMsg =
+          "❌ Step 23 Gagal: Gagal aktivasi trial Teams. Mungkin trial sudah pernah atau sedang aktif.";
       } else if (errMsg.includes("LOGIN_FAILED")) {
-        userMsg = "❌ Step 5 Gagal: Gagal login ke Dashboard. Admin Center tidak dapat diakses.";
+        userMsg =
+          "❌ Step 5 Gagal: Gagal login ke Dashboard. Admin Center tidak dapat diakses.";
       } else if (errMsg.includes("EMAIL_TRANSITION_FAILED")) {
-        userMsg = "❌ Step 3 Gagal: Gagal lanjut ke pengisian password. Sistem mentok di pengisian email.";
+        userMsg =
+          "❌ Step 3 Gagal: Gagal lanjut ke pengisian password. Sistem mentok di pengisian email.";
       } else if (errMsg.includes("MARKETPLACE_ERROR")) {
         userMsg = "❌ Step 12 Gagal: Produk tidak tersedia untuk akun ini.";
       } else if (errMsg.includes("BUY_CLICK_NOP")) {
-        userMsg = "❌ Step 17 Gagal: Klik tombol 'Beli' tidak direspon oleh halaman Marketplace. Cek kondisi server Microsoft.";
+        userMsg =
+          "❌ Step 17 Gagal: Klik tombol 'Beli' tidak direspon oleh halaman Marketplace. Cek kondisi server Microsoft.";
       } else if (errMsg.includes("timeout") || errMsg.includes("waiting")) {
-        userMsg = "❌ Koneksi Lambat: Proses berhenti karena waktu tunggu habis (Timeout).";
+        userMsg =
+          "❌ Koneksi Lambat: Proses berhenti karena waktu tunggu habis (Timeout).";
       }
 
       await remoteLogger.logError(
