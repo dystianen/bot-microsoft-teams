@@ -9,6 +9,19 @@ class RemoteLogger {
     this.sessionMap = new Map(); // Store message_id per account (email)
   }
 
+  async send(text, parse_mode = "HTML") {
+    if (!this.token || !this.chatId || !this.chatId.trim()) return;
+    try {
+      await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+        chat_id: this.chatId,
+        text: text.substring(0, 4000),
+        parse_mode,
+      });
+    } catch (err) {
+      console.error(`[RemoteLogger] Send failed: ${err.message}`);
+    }
+  }
+
   async _sendOrEdit(email, text, isFinal = false) {
     if (!this.token || !this.chatId || !this.chatId.trim()) return;
 

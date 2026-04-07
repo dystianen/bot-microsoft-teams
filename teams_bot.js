@@ -834,12 +834,21 @@ class TeamsBot {
         await buyBtn.click({ timeout: 10000, force: true }).catch(() => { });
         await this.page.waitForTimeout(1500);
 
-        // Verifikasi apakah klik berhasil (URL berubah atau tombol hilang)
+        // Verifikasi apakah klik berhasil (URL berubah, tombol hilang, atau elemen step berikutnya muncul)
         const newUrl = this.page.url();
         const isBtnStillVisible = await buyBtn.isVisible().catch(() => false);
+        
+        const nextStepMarker = this.page.locator(`
+          .ms-Checkbox:has-text("authorize recurring payments"), 
+          .ms-Checkbox:has-text("pembayaran berulang"),
+          button:has-text("Place order"), 
+          button:has-text("Buat pesanan"),
+          button:has-text("Tempatkan pesanan")
+        `).first();
+        const isNextStepVisible = await nextStepMarker.isVisible().catch(() => false);
 
-        if (newUrl !== oldUrl || !isBtnStillVisible) {
-          console.log("[SUCCESS] 'Buy' click triggered page transition.");
+        if (newUrl !== oldUrl || !isBtnStillVisible || isNextStepVisible) {
+          console.log("[SUCCESS] 'Buy' click triggered transition (URL change or Next Step detected).");
           clickedSuccessfully = true;
           break;
         }
@@ -1380,6 +1389,8 @@ class TeamsBot {
         userMsg = "❌ Step 3 Gagal: Gagal lanjut ke pengisian password. Sistem mentok di pengisian email.";
       } else if (errMsg.includes("MARKETPLACE_ERROR")) {
         userMsg = "❌ Step 12 Gagal: Produk tidak tersedia untuk akun ini.";
+      } else if (errMsg.includes("BUY_CLICK_NOP")) {
+        userMsg = "❌ Step 17 Gagal: Klik tombol 'Beli' tidak direspon oleh halaman Marketplace. Cek kondisi server Microsoft.";
       } else if (errMsg.includes("timeout") || errMsg.includes("waiting")) {
         userMsg = "❌ Koneksi Lambat: Proses berhenti karena waktu tunggu habis (Timeout).";
       }
