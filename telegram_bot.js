@@ -387,7 +387,7 @@ function initializeBotHandlers(bot) {
         telegram_id: chatId.toString(),
       })
         .sort({ createdAt: -1 })
-        .limit(10);
+        .limit(100);
 
       if (records.length === 0) {
         return bot.sendMessage(chatId, "📭 No history found.");
@@ -396,7 +396,7 @@ function initializeBotHandlers(bot) {
       const successRecords = records.filter((r) => r.status === "SUCCESS");
       const failedRecords = records.filter((r) => r.status !== "SUCCESS");
 
-      let message = "📜 <b>Recent Account History (Last 10):</b>\n\n";
+      let message = "📜 <b>Recent Account History (Last 100):</b>\n\n";
       
       let counter = 1;
       
