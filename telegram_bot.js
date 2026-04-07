@@ -192,7 +192,12 @@ function initializeBotHandlers(bot) {
       let activeWorkers = 0;
       const maxWorkers = userConf.concurrencyLimit;
       let globalIdx = 0;
-      const originalTotal = session.accounts.length;
+      
+      // Snapshot: only process what was here when we started
+      const accountsToProcess = [...session.accounts];
+      session.accounts = []; // Clear queue to avoid re-processing same items
+      
+      const originalTotal = accountsToProcess.length;
       const pendingPromises = new Set();
       const queueResults = {
         success: [],
@@ -281,11 +286,11 @@ function initializeBotHandlers(bot) {
         while (true) {
           if (
             activeWorkers < maxWorkers &&
-            session.accounts.length > 0 &&
+            accountsToProcess.length > 0 &&
             !session.forceStop &&
             !isShuttingDown
           ) {
-            const accountData = session.accounts.shift();
+            const accountData = accountsToProcess.shift();
             globalIdx++;
             const currentIdx = globalIdx;
 
@@ -298,12 +303,12 @@ function initializeBotHandlers(bot) {
             );
             pendingPromises.add(promise);
 
-            if (session.accounts.length > 0 && activeWorkers < maxWorkers) {
+            if (accountsToProcess.length > 0 && activeWorkers < maxWorkers) {
               await new Promise((r) => setTimeout(r, 2500));
             }
           } else if (
             activeWorkers === 0 &&
-            (session.accounts.length === 0 || session.forceStop)
+            (accountsToProcess.length === 0 || session.forceStop)
           ) {
             break;
           } else {
@@ -331,11 +336,19 @@ function initializeBotHandlers(bot) {
           );
         } else {
           // Send summary to remoteLogger
+          const processedCount = queueResults.success.length + queueResults.failed.length;
           let summaryMsg = `🏁 <b>Batch Queue Finished</b>\n`;
-          summaryMsg += `Total: <code>${originalTotal}</code> | ✅ Success: <code>${queueResults.success.length}</code> | ❌ Failed: <code>${queueResults.failed.length}</code>\n\n`;
+          summaryMsg += `🔢 Total Antrian: <code>${originalTotal}</code>\n`;
+          summaryMsg += `✅ Berhasil: <code>${queueResults.success.length}</code>\n`;
+          summaryMsg += `❌ Gagal: <code>${queueResults.failed.length}</code>\n`;
+          
+          if (processedCount < originalTotal) {
+            summaryMsg += `🛑 Berhenti Paksa: <code>${originalTotal - processedCount}</code> akun dilewati\n`;
+          }
+          summaryMsg += `\n`;
 
           if (queueResults.success.length > 0) {
-            summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
+            summaryMsg += `🟢 <b>DAFTAR BERHASIL:</b>\n`;
             queueResults.success.forEach((r, i) => {
               summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
             });

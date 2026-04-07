@@ -701,10 +701,11 @@ class TeamsBot {
               `🛒 Membuka halaman Marketplace untuk produk: ${planName}...`,
             );
             await this.page.goto(catalogUrl, {
-              waitUntil: "commit",
+              waitUntil: "domcontentloaded",
               timeout: HARD_TIMEOUT,
             });
-            await this.waitForSpinnerGone(800);
+            await this.waitForSpinnerGone(2000);
+            await this.page.waitForTimeout(1500); // Give React UI time to hydrate
           }
 
           // Check for 'This product is unavailable' or 'You are not eligible'
