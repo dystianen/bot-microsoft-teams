@@ -770,7 +770,7 @@ class TeamsBot {
         button:has-text("Checkout"), [role="button"]:has-text("Checkout"), a:has-text("Checkout")
       `).first();
       
-      await this.waitForVisible(buyBtn).catch(err => {
+      await this.waitForVisible(buyBtn).catch(() => {
         throw new Error("BUY_BUTTON_NOT_FOUND: Tombol 'Buy/Beli' tidak ditemukan di halaman marketplace.");
       });
 
@@ -1025,17 +1025,23 @@ class TeamsBot {
         waitUntil: "domcontentloaded",
         timeout: HARD_TIMEOUT,
       });
-      await this.waitForSpinnerGone(); // Note: this waits for spinner in this.page, let's use a helper for teamsPage if needed
 
-      // 22. Menunggu sampe button sign in muncul click
+      // 22 & 23 Combined: Faster detection for Teams state
       await remoteLogger.logStep(
         email,
         22,
-        "⏳ Menunggu tombol 'Masuk' muncul di Teams (atau deteksi error izin)...",
+        "⏳ Menunggu Teams siap (Sign in atau Start Trial)...",
       );
+
       const teamsSignInBtn = teamsPage
         .locator(
           'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")',
+        )
+        .first();
+
+      const startTrialBtn = teamsPage
+        .locator(
+          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial")',
         )
         .first();
 
@@ -1044,62 +1050,31 @@ class TeamsBot {
         .first();
 
       try {
+        console.log("[INFO] Waiting for Sign In, Start Trial, or Permission Error (Race)...");
+        // Race between the buttons with a 30s timeout to avoid long waits
         await teamsSignInBtn
+          .or(startTrialBtn)
           .or(permissionErrorLocator)
           .waitFor({ state: "visible", timeout: 30000 });
 
         if (await permissionErrorLocator.isVisible().catch(() => false)) {
-          console.error(
-            "[ERROR] Permission error page detected before Sign in.",
-          );
-          throw new Error(
-            "Don't have the required permissions to access this org",
-          );
+          console.error("[ERROR] Permission error page detected.");
+          throw new Error("Don't have the required permissions to access this org");
         }
 
-        await teamsSignInBtn.click();
-        await teamsPage.waitForTimeout(5000);
-      } catch (err) {
-        if (
-          err.message ===
-          "Don't have the required permissions to access this org"
-        ) {
-          throw err;
-        }
-        console.log(
-          "[INFO] 'Sign in' button not found or already signed in Teams. Continuing...",
-        );
-      }
-
-      // 23. Menunggu start trial muncul lalu click
-      console.log("[STEP 23] Waiting for Teams loading screen to finish...");
-
-      const startTrialBtn = teamsPage
-        .locator(
-          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial")',
-        )
-        .first();
-
-      try {
-        // Race: tunggu loading hilang ATAU button muncul, mana duluan
-        await Promise.race([
-          teamsPage
-            .locator("#loading-screen")
-            .waitFor({ state: "hidden", timeout: 120000 })
-            .catch(() => { }),
-          startTrialBtn.waitFor({ state: "visible", timeout: 120000 }),
-        ]);
-
-        // Pastikan button visible sebelum klik
-        const isBtnVisible = await startTrialBtn.isVisible().catch(() => false);
-        if (!isBtnVisible) {
-          // Kalau belum visible setelah race, tunggu sebentar lagi
-          await startTrialBtn.waitFor({ state: "visible", timeout: 30000 });
+        if (await teamsSignInBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Sign in' button detected, clicking...");
+          await teamsSignInBtn.click();
+          await teamsPage.waitForTimeout(3000);
+          console.log("[INFO] Waiting for 'Start Trial' button to appear after Sign in...");
+          await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
+        } else {
+          console.log("[INFO] 'Start Trial' button already visible, proceeding.");
         }
 
         await remoteLogger.logStep(
           email,
-          23.5,
+          23,
           "▶️ Mengklik tombol 'Mulai Uji Coba' di Microsoft Teams...",
         );
 
@@ -1110,7 +1085,7 @@ class TeamsBot {
         // Menunggu loading setelah klik start trial selesai sebelum close
         await remoteLogger.logStep(
           email,
-          23.6,
+          23.5,
           "⏳ Menunggu proses aktivasi uji coba selesai (loading)...",
         );
 
@@ -1132,13 +1107,14 @@ class TeamsBot {
 
         await remoteLogger.logStep(
           email,
-          23.7,
+          23.6,
           "✅ Aktivasi uji coba selesai. Menutup tab Teams...",
         );
       } catch (err) {
         await teamsPage.close().catch(() => { });
+        if (err.message.includes("permissions")) throw err;
         throw new Error(
-          "START_TRIAL_NOT_FOUND: Tombol 'Start trial' gagal ditemukan setelah Teams terbuka.",
+          `START_TRIAL_FAILED: ${err.message || "Gagal aktivasi trial Teams."}`,
         );
       }
       // Close the teams tab after trial
