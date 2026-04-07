@@ -381,6 +381,13 @@ class TeamsBot {
         "Berikutnya",
       ]);
 
+      // --- STEP 3 VERIFICATION (CHECKPOINT) ---
+      console.log("[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...");
+      const passwordOrPrompt = this.page.locator('input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya")');
+      await passwordOrPrompt.first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {
+        throw new Error("EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. Cek apakah email sudah benar atau ada error di halaman.");
+      });
+
       // 3.5 Handle "Choose a way to sign in" if it appears
       console.log(
         "[STEP 3.5] Checking for 'Choose a way to sign in' prompt...",
@@ -771,7 +778,7 @@ class TeamsBot {
       `).first();
       
       await this.waitForVisible(buyBtn).catch(() => {
-        throw new Error("BUY_BUTTON_NOT_FOUND: Tombol 'Buy/Beli' tidak ditemukan di halaman marketplace.");
+        throw new Error("BUY_BUTTON_NOT_FOUND");
       });
 
       // 15.7 & 16: Pemilihan Commitment & Billing Frequency (dengan Re-check silang)
@@ -1021,10 +1028,22 @@ class TeamsBot {
         "🚀 Membuka Microsoft Teams di tab baru untuk aktivasi trial...",
       );
       const teamsPage = await this.context.newPage();
-      await teamsPage.goto("https://teams.microsoft.com/v2/", {
-        waitUntil: "domcontentloaded",
-        timeout: HARD_TIMEOUT,
-      });
+      try {
+        await teamsPage.goto("https://teams.microsoft.com/v2/", {
+          waitUntil: "domcontentloaded",
+          timeout: HARD_TIMEOUT,
+        });
+        
+        // Final robustness check: if page is totally blank, try one refresh
+        const bodyText = await teamsPage.innerText("body").catch(() => "");
+        if (!bodyText || bodyText.trim().length === 0) {
+           console.log("[INFO] Teams page is blank, refreshing...");
+           await teamsPage.reload({ waitUntil: "domcontentloaded" });
+        }
+      } catch (e) {
+        console.warn("[WARN] Initial Teams navigation failed, retrying...");
+        await teamsPage.goto("https://teams.microsoft.com/v2/", { waitUntil: "domcontentloaded" });
+      }
 
       // 22 & 23 Combined: Faster detection for Teams state
       await remoteLogger.logStep(
@@ -1343,12 +1362,34 @@ class TeamsBot {
       );
       return { success: true };
     } catch (error) {
+      let userMsg = "❌ Otomasi gagal — proses dihentikan";
+      const errMsg = error.message || "";
+
+      // Error Mapping Dictionary (Human Friendly)
+      if (errMsg.includes("BUY_BUTTON_NOT_FOUND")) {
+        userMsg = "❌ Step 17 Gagal: Tombol 'Beli' tidak ditemukan. Halaman Marketplace mungkin tidak memuat produk ini.";
+      } else if (errMsg.includes("BUY_BUTTON_LOCKED")) {
+        userMsg = "❌ Step 17 Gagal: Tombol 'Beli' terkunci (abu-abu). Cek kelengkapan data penagihan atau apakah produk masih tersedia.";
+      } else if (errMsg.includes("PLACE_ORDER_FAILED")) {
+        userMsg = "❌ Step 19 Gagal: Gagal saat menekan 'Buat Pesanan'. Microsoft mungkin menolak transaksi ini.";
+      } else if (errMsg.includes("START_TRIAL_FAILED")) {
+        userMsg = "❌ Step 23 Gagal: Gagal aktivasi trial Teams. Mungkin trial sudah pernah atau sedang aktif.";
+      } else if (errMsg.includes("LOGIN_FAILED")) {
+        userMsg = "❌ Step 5 Gagal: Gagal login ke Dashboard. Admin Center tidak dapat diakses.";
+      } else if (errMsg.includes("EMAIL_TRANSITION_FAILED")) {
+        userMsg = "❌ Step 3 Gagal: Gagal lanjut ke pengisian password. Sistem mentok di pengisian email.";
+      } else if (errMsg.includes("MARKETPLACE_ERROR")) {
+        userMsg = "❌ Step 12 Gagal: Produk tidak tersedia untuk akun ini.";
+      } else if (errMsg.includes("timeout") || errMsg.includes("waiting")) {
+        userMsg = "❌ Koneksi Lambat: Proses berhenti karena waktu tunggu habis (Timeout).";
+      }
+
       await remoteLogger.logError(
         this.accountConfig?.microsoftAccount?.email,
-        "❌ Otomasi gagal — proses dihentikan",
-        error.message,
+        userMsg,
+        errMsg,
       );
-      return { success: false, error: error.message };
+      return { success: false, error: errMsg };
     }
   }
 

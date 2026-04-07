@@ -50,7 +50,13 @@ class RemoteLogger {
   async logError(email, msg, details = "") {
     const identifier = email ? `[<code>${this.escapeHTML(email.split("@")[0])}</code>]` : "";
     console.error(`${identifier} [ERROR] ${msg} ${details}`);
-    await this.send(`${identifier} ❌ <b>ERROR</b>: ${this.escapeHTML(msg)}\n<pre>${this.escapeHTML(details.substring(0, 500))}</pre>`);
+    
+    let formattedMsg = `${identifier} ❌ <b>FAILURE DETECTED</b>\n\n`;
+    formattedMsg += `<b>Issue:</b> ${this.escapeHTML(msg)}\n`;
+    if (details) {
+      formattedMsg += `\n<b>Technical Details:</b>\n<pre>${this.escapeHTML(details.substring(0, 1000))}</pre>`;
+    }
+    await this.send(formattedMsg);
   }
 
   async logSuccess(email, msg) {
