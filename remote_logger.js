@@ -235,16 +235,27 @@ class RemoteLogger {
     const memory = process.memoryUsage();
     const freeMem = os.freemem() / (1024 * 1024 * 1024);
     const totalMem = os.totalmem() / (1024 * 1024 * 1024);
-    const loadAvg = os.loadavg();
+    const isWindows = os.platform() === "win32";
 
-    const status = `🖥 <b>System Status ${this.escapeHTML(prefix)}</b>:
-      - CPU Load (1m): <code>${loadAvg[0].toFixed(2)}</code>
-      - CPU Load (5m): <code>${loadAvg[1].toFixed(2)}</code>
-      - RAM: <code>${freeMem.toFixed(2)} GB Free / ${totalMem.toFixed(2)} GB Total</code>
-      - Process RSS: <code>${(memory.rss / (1024 * 1024)).toFixed(2)} MB</code>`;
+    let cpuLine = "";
+    if (isWindows) {
+      // Windows tidak support loadavg — tampilkan CPU count saja
+      cpuLine = `- CPU Cores: <code>${os.cpus().length} cores</code>`;
+    } else {
+      const loadAvg = os.loadavg();
+      cpuLine = `- CPU Load (1m/5m/15m): <code>${loadAvg[0].toFixed(2)} / ${loadAvg[1].toFixed(2)} / ${loadAvg[2].toFixed(2)}</code>`;
+    }
+
+    const usedMem = totalMem - freeMem;
+    const memPercent = ((usedMem / totalMem) * 100).toFixed(1);
+
+    const status = `🖥 <b>System Status ${this.escapeHTML(prefix)}</b>
+      ${cpuLine}
+      - RAM: <code>${freeMem.toFixed(2)} GB Free / ${totalMem.toFixed(2)} GB Total (${memPercent}% used)</code>
+      - Process RSS: <code>${(memory.rss / (1024 * 1024)).toFixed(2)} MB</code>
+      - Heap Used: <code>${(memory.heapUsed / (1024 * 1024)).toFixed(2)} MB</code>`;
 
     console.log(`[SYSTEM] ${status.replace(/<[^>]*>/g, "")}`);
-    // FIX: pakai send() supaya masuk queue yang sama, bukan _enqueue() baru
     await this.send(status, "HTML");
   }
 }
