@@ -151,7 +151,80 @@ class RemoteLogger {
     });
   }
 
-  // ... method lain (getProgressBar, escapeHTML, logStep, dll) tidak perlu diubah
+  getProgressBar(current, total = 28) {
+    const size = 10;
+    const progress = Math.min(Math.max(current / total, 0), 1);
+    const filled = Math.round(size * progress);
+    const empty = size - filled;
+    const bar = "█".repeat(filled) + "░".repeat(empty);
+    return `<code>[${bar}] ${Math.round(progress * 100)}%</code>`;
+  }
+
+  escapeHTML(text) {
+    if (!text) return "";
+    return text
+      .toString()
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  async info(msg) {
+    console.log(`[INFO] ${msg}`);
+    if (!this.token || !this.chatId) return;
+    await this._enqueue(async () => {
+      await axios.post(
+        `https://api.telegram.org/bot${this.token}/sendMessage`,
+        {
+          chat_id: this.chatId,
+          text: `ℹ️ <b>[INFO]</b> ${this.escapeHTML(msg)}`,
+          parse_mode: "HTML",
+        },
+      );
+    });
+  }
+
+  async logStep(email, stepNum, msg) {
+    const user = email ? email.split("@")[0] : "unknown";
+    const identifier = `🚀 <b>Processing:</b> <code>${this.escapeHTML(user)}</code>`;
+
+    console.log(`[${user}] [STEP ${stepNum}] ${msg}`);
+
+    let text = `${identifier}\n`;
+    text += `📍 <b>Current:</b> Step ${stepNum}/28\n`;
+    text += `📝 <b>Status:</b> ${this.escapeHTML(msg)}\n`;
+    text += `${this.getProgressBar(stepNum)}`;
+
+    await this._sendOrEdit(email, text, false);
+  }
+
+  async logError(email, msg, details = "") {
+    const user = email ? email.split("@")[0] : "unknown";
+    const identifier = `❌ <b>Failed:</b> <code>${this.escapeHTML(user)}</code>`;
+
+    console.error(`[${user}] [ERROR] ${msg} ${details}`);
+
+    let formattedMsg = `${identifier}\n\n`;
+    formattedMsg += `<b>Issue:</b> ${this.escapeHTML(msg)}\n`;
+    if (details) {
+      formattedMsg += `\n<b>Technical Details:</b>\n<pre>${this.escapeHTML(details.substring(0, 1000))}</pre>`;
+    }
+
+    await this._sendOrEdit(email, formattedMsg, true);
+  }
+
+  async logSuccess(email, msg) {
+    const user = email ? email.split("@")[0] : "unknown";
+    const identifier = `✅ <b>Success:</b> <code>${this.escapeHTML(user)}</code>`;
+
+    console.log(`[${user}] [SUCCESS] ${msg}`);
+
+    let text = `${identifier}\n`;
+    text += `🏁 <b>Status:</b> ${this.escapeHTML(msg)}\n`;
+    text += `${this.getProgressBar(28, 28)}`;
+
+    await this._sendOrEdit(email, text, true);
+  }
 
   async reportSystemStatus(prefix = "") {
     const memory = process.memoryUsage();
