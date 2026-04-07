@@ -509,54 +509,19 @@ class TeamsBot {
         );
       }
 
-      // 6. select menu users (collapse dia)
+      // 6. Direct navigation to Active Users
       await remoteLogger.logStep(
         email,
         6,
-        "📂 Membuka menu 'Pengguna' di panel navigasi kiri...",
+        "📂 Membuka halaman 'Pengguna Aktif' langsung via URL...",
       );
 
+      await this.page.goto("https://admin.cloud.microsoft/?#/users", {
+        waitUntil: "domcontentloaded",
+        timeout: HARD_TIMEOUT,
+      });
       await this.waitForSpinnerGone(200);
-      await this.handlePopups(); // One more check before interacting
-      const navLocator = this.page
-        .locator('[data-hint="ReactLeftNav"]')
-        .first();
-      await this.waitForVisible(navLocator);
-      await this.humanDelay(400, 800);
-
-      const usersMenu = this.page
-        .locator(
-          'button[data-automation-id="LeftNavusersnodeNavToggler"], button[name="Users"], button:has-text("Users"), button[name="Pengguna"], button:has-text("Pengguna")',
-        )
-        .first();
-      await this.waitForVisible(usersMenu);
-
-      // Check if it's already expanded. If aria-expanded is 'true', don't click it again to collapse it.
-      const isExpanded = await usersMenu.getAttribute("aria-expanded");
-      if (isExpanded !== "true") {
-        console.log("[INFO] Users menu is collapsed, clicking to expand...");
-        await usersMenu.click();
-        await this.humanDelay(500, 1000);
-      } else {
-        console.log("[INFO] Users menu is already expanded.");
-      }
-
-      // 7. terus pilih activer users
-      await remoteLogger.logStep(
-        email,
-        7,
-        "👥 Memilih sub-menu 'Pengguna Aktif'...",
-      );
-      const activeUsersLink = this.page
-        .locator(
-          'a[data-automation-id="LeftNavactiveusersnodeNavToggler"], a:has-text("Active users"), a:has-text("Pengguna aktif")',
-        )
-        .first();
-      await this.waitForVisible(activeUsersLink);
-      await activeUsersLink.click();
-
-      console.log("[INFO] Waiting for Active users list to appear...");
-      await this.waitForSpinnerGone(200);
+      await this.handlePopups(); // One check for page popups
 
       // 8. Search account by email in the user list and select
       const fullEmail = this.accountConfig.microsoftAccount.email;
@@ -1157,7 +1122,7 @@ class TeamsBot {
       await this.page.bringToFront();
 
       // Navigate back to Active Users
-      await this.page.goto("https://admin.microsoft.com/#/users", {
+      await this.page.goto("https://admin.cloud.microsoft/?#/users", {
         waitUntil: "domcontentloaded",
         timeout: HARD_TIMEOUT,
       });
