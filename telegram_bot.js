@@ -358,12 +358,7 @@ function initializeBotHandlers(bot) {
           const CHUNK_SIZE = 4000;
           for (let i = 0; i < summaryMsg.length; i += CHUNK_SIZE) {
             const chunk = summaryMsg.substring(i, i + CHUNK_SIZE);
-            await bot.sendMessage(chatId, chunk, { parse_mode: "HTML", reply_markup: mainMenu }).catch(async (err) => {
-               // Fallback if HTML fails
-               if (err.message.includes("can't parse entities")) {
-                  await bot.sendMessage(chatId, chunk.replace(/<[^>]*>?/gm, ""), { reply_markup: mainMenu });
-               }
-            });
+            await safeSendMessage(chatId, chunk, { parse_mode: "HTML", reply_markup: mainMenu });
           }
         }
       }

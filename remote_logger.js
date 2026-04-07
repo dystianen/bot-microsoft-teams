@@ -7,24 +7,34 @@ class RemoteLogger {
     this.token = config.telegram?.token;
     this.chatId = config.telegram?.logChatId;
     this.sessionMap = new Map(); // Store message_id per account (email)
+    this.queue = Promise.resolve();
+  }
+
+  async _enqueue(action) {
+    const promise = this.queue.then(async () => {
+      try {
+        await action();
+      } catch (err) {
+        console.error(`[RemoteLogger] Action failed: ${err.message}`);
+      }
+      await new Promise((r) => setTimeout(r, 400)); // Rate limit buffer
+    });
+    this.queue = promise.catch(() => {});
+    return promise;
   }
 
   async send(text, parse_mode = "HTML") {
     if (!this.token || !this.chatId || !this.chatId.trim()) return;
 
-    // Split text into chunks to avoid 4096-char Telegram limit and broken HTML entities
     const CHUNK_SIZE = 4000;
     const chunks = [];
     
     if (text.length <= CHUNK_SIZE) {
       chunks.push(text);
     } else {
-      // Crude splitting: try to split at newline to keep formatting clean
       let currentIdx = 0;
       while (currentIdx < text.length) {
         let chunk = text.substring(currentIdx, currentIdx + CHUNK_SIZE);
-        
-        // Try to find last newline within chunk to split cleanly
         const lastNewline = chunk.lastIndexOf("\n");
         if (lastNewline > 500 && currentIdx + CHUNK_SIZE < text.length) {
            chunk = text.substring(currentIdx, currentIdx + lastNewline);
@@ -37,63 +47,76 @@ class RemoteLogger {
     }
 
     for (const chunk of chunks) {
-      try {
-        await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-          chat_id: this.chatId,
-          text: chunk,
-          parse_mode,
-        });
-      } catch (err) {
-        // If HTML parsing fails (e.g. truncated tag), send as plain text fallback
-        if (err.response?.data?.description?.includes("can't parse entities")) {
-           await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-             chat_id: this.chatId,
-             text: chunk.replace(/<[^>]*>?/gm, ""), // Strip HTML
-             parse_mode: "",
-           }).catch(() => {});
-        } else {
-           console.error(`[RemoteLogger] Send failed: ${err.message}`);
+      await this._enqueue(async () => {
+        try {
+          await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+            chat_id: this.chatId,
+            text: chunk,
+            parse_mode,
+          });
+        } catch (err) {
+          if (err.response?.data?.description?.includes("can't parse entities")) {
+            await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+              chat_id: this.chatId,
+              text: chunk.replace(/<[^>]*>?/gm, ""),
+              parse_mode: "",
+            });
+          } else {
+            throw err;
+          }
         }
-      }
+      });
     }
   }
 
   async _sendOrEdit(email, text, isFinal = false) {
     if (!this.token || !this.chatId || !this.chatId.trim()) return;
 
-    const messageId = this.sessionMap.get(email);
-    
-    try {
-      if (messageId) {
-        await axios.post(`https://api.telegram.org/bot${this.token}/editMessageText`, {
-          chat_id: this.chatId,
-          message_id: messageId,
-          text: text.substring(0, 4000),
-          parse_mode: "HTML",
-        });
-      } else {
-        const resp = await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-          chat_id: this.chatId,
-          text: text.substring(0, 4000),
-          parse_mode: "HTML",
-        });
-        if (resp.data?.result?.message_id) {
-          this.sessionMap.set(email, resp.data.result.message_id);
+    await this._enqueue(async () => {
+      const messageId = this.sessionMap.get(email);
+      try {
+        if (messageId) {
+          await axios.post(`https://api.telegram.org/bot${this.token}/editMessageText`, {
+            chat_id: this.chatId,
+            message_id: messageId,
+            text: text.substring(0, 4000),
+            parse_mode: "HTML",
+          });
+        } else {
+          const resp = await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+            chat_id: this.chatId,
+            text: text.substring(0, 4000),
+            parse_mode: "HTML",
+          });
+          if (resp.data?.result?.message_id) {
+            this.sessionMap.set(email, resp.data.result.message_id);
+          }
+        }
+      } catch (err) {
+        const desc = err.response?.data?.description || "";
+        // If message is not modified, ignore error
+        if (desc.includes("message is not modified")) return;
+
+        // If edit fails (e.g. message deleted or outdated), send new message
+        if (messageId) {
+          this.sessionMap.delete(email);
+          const resp = await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+            chat_id: this.chatId,
+            text: text.substring(0, 4000),
+            parse_mode: "HTML",
+          });
+          if (resp.data?.result?.message_id) {
+            this.sessionMap.set(email, resp.data.result.message_id);
+          }
+        } else {
+          throw err;
+        }
+      } finally {
+        if (isFinal) {
+          this.sessionMap.delete(email);
         }
       }
-    } catch (err) {
-      if (messageId) {
-        // Fallback: If edit fails, send new message
-        this.sessionMap.delete(email);
-        return this._sendOrEdit(email, text, isFinal);
-      }
-      console.error(`[RemoteLogger] Failed: ${err.message}`);
-    } finally {
-      if (isFinal) {
-        this.sessionMap.set(email, null); // Clear ID after final status
-        this.sessionMap.delete(email);
-      }
-    }
+    });
   }
 
   getProgressBar(current, total = 28) {
@@ -115,13 +138,14 @@ class RemoteLogger {
 
   async info(msg) {
     console.log(`[INFO] ${msg}`);
-    // Info messages don't need editing, they are general
     if (!this.token || !this.chatId) return;
-    await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-      chat_id: this.chatId,
-      text: `ℹ️ <b>[INFO]</b> ${this.escapeHTML(msg)}`,
-      parse_mode: "HTML",
-    }).catch(() => {});
+    await this._enqueue(async () => {
+      await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+        chat_id: this.chatId,
+        text: `ℹ️ <b>[INFO]</b> ${this.escapeHTML(msg)}`,
+        parse_mode: "HTML",
+      });
+    });
   }
 
   async logStep(email, stepNum, msg) {
@@ -180,11 +204,13 @@ class RemoteLogger {
 
     console.log(`[SYSTEM] ${status.replace(/<[^>]*>/g, "")}`);
     if (!this.token || !this.chatId) return;
-    await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-      chat_id: this.chatId,
-      text: status,
-      parse_mode: "HTML",
-    }).catch(() => {});
+    await this._enqueue(async () => {
+      await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+        chat_id: this.chatId,
+        text: status,
+        parse_mode: "HTML",
+      });
+    });
   }
 }
 
