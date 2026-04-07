@@ -204,8 +204,16 @@ function initializeBotHandlers(bot) {
             queueResults.success.push({ email: accountData.email });
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
             // Calculate WIB (UTC+7) manually and format without the 'true' flag
-            const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
-            message += `Time: <code>${date.format(nowWib, "DD MMM YYYY HH:mm")}</code>\n`;
+            const timeWib = new Date().toLocaleString("en-GB", {
+              timeZone: "Asia/Jakarta",
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false
+            }).replace(",", "");
+            message += `Time: <code>${timeWib}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           } else {
@@ -352,8 +360,14 @@ function initializeBotHandlers(bot) {
       if (successRecords.length > 0) {
         message += "🟢 <b>SUCCESS:</b>\n";
         successRecords.forEach((rec) => {
-          const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
-          const timeStr = date.format(dateWib, "DD/MM HH:mm");
+          const timeStr = rec.createdAt.toLocaleString("en-GB", {
+            timeZone: "Asia/Jakarta",
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }).replace(/\//g, "/");
           message += `${counter++}. ✅ <code>${timeStr}</code>\n`;
           message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
           message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
@@ -365,8 +379,14 @@ function initializeBotHandlers(bot) {
       if (failedRecords.length > 0) {
         message += "🔴 <b>FAILED:</b>\n";
         failedRecords.forEach((rec) => {
-          const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
-          const timeStr = date.format(dateWib, "DD/MM HH:mm");
+          const timeStr = rec.createdAt.toLocaleString("en-GB", {
+            timeZone: "Asia/Jakarta",
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }).replace(/\//g, "/");
           message += `${counter++}. ❌ <code>${timeStr}</code>\n`;
           message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
           message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
