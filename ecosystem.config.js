@@ -7,6 +7,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: "1G",
+      kill_timeout: 300000, // Wait up to 5 minutes to finish current task
       env: {
         NODE_ENV: "production",
       },

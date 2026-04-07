@@ -6,6 +6,10 @@ const { AccountHistory, UserConfig } = require("./models");
 const date = require("date-and-time");
 const remoteLogger = require("./remote_logger");
 
+// Global state for graceful shutdown
+let isShuttingDown = false;
+let activeAccountsCount = 0;
+
 // Wrap in an async function to allow awaiting connection
 async function startBot() {
   try {
@@ -25,6 +29,31 @@ async function startBot() {
     initializeBotHandlers(bot);
 
     console.log("Teams Bot (Playwright Local) started.");
+
+    // Graceful Shutdown Handler
+    const shutdown = () => {
+      if (isShuttingDown) return;
+      console.log("\n[Graceful Shutdown] Signal received. Finishing current tasks...");
+      isShuttingDown = true;
+      
+      // Stop receiving new commands from Telegram
+      bot.stopPolling();
+
+      if (activeAccountsCount === 0) {
+        console.log("[Graceful Shutdown] No active tasks. Exiting now.");
+        process.exit(0);
+      } else {
+        console.log(`[Graceful Shutdown] Waiting for ${activeAccountsCount} active accounts to finish...`);
+        // Safety timeout to prevent hanging forever
+        setTimeout(() => {
+          console.log("[Graceful Shutdown] Timeout reached. Force exiting.");
+          process.exit(1);
+        }, 290000); // 4.8 minutes (matches kill_timeout in pm2)
+      }
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   } catch (err) {
     console.error("Failed to start bot:", err.message);
     process.exit(1);
@@ -184,6 +213,7 @@ function initializeBotHandlers(bot) {
           headless: userConf.headless,
         };
 
+        activeAccountsCount++;
         try {
           const result = await processSingleAccount(
             pairedData,
@@ -239,6 +269,12 @@ function initializeBotHandlers(bot) {
             log: err.message,
           });
           await failRecord.save().catch(() => {});
+        } finally {
+          activeAccountsCount--;
+          if (isShuttingDown && activeAccountsCount === 0) {
+            console.log("[Graceful Shutdown] Last active task finished. Exiting process.");
+            process.exit(0);
+          }
         }
       };
 
@@ -247,7 +283,8 @@ function initializeBotHandlers(bot) {
           if (
             activeWorkers < maxWorkers &&
             session.accounts.length > 0 &&
-            !session.forceStop
+            !session.forceStop &&
+            !isShuttingDown
           ) {
             const accountData = session.accounts.shift();
             globalIdx++;
