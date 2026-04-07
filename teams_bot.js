@@ -36,7 +36,7 @@ class TeamsBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        await this.page.waitForTimeout(4000).catch(() => {
+        await this.page.waitForTimeout(1500).catch(() => {
           isDone = true;
         });
         if (isDone) break;
@@ -396,7 +396,7 @@ class TeamsBot {
           "[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...",
         );
         await usePasswordPrompt.click();
-        await this.humanDelay(1000, 2000);
+        await this.humanDelay(400, 800);
       } catch (e) {
         console.log(
           "[INFO] No 'Choose a way to sign in' prompt found, continuing...",
@@ -429,7 +429,7 @@ class TeamsBot {
         // 5.1 Cek apakah sudah sampai Dashboard?
         if (await dashboardMarker.isVisible().catch(() => false)) {
           console.log("[SUCCESS] Dashboard detected!");
-          await this.humanDelay(2000, 4000); // Wait for potential popups to load
+          await this.humanDelay(1000, 1500); // Wait for potential popups to load
           await this.handlePopups();
           break;
         }
@@ -444,7 +444,7 @@ class TeamsBot {
           console.log("[INFO] Handling 'Stay signed in'...");
           try {
             await yesBtn.click({ timeout: 5000 });
-            await this.humanDelay(2000, 3000);
+            await this.humanDelay(1000, 1500);
             continue;
           } catch (e) {
             console.log("[WARN] 'Yes' button blocked or failed, checking popups...");
@@ -461,7 +461,7 @@ class TeamsBot {
           console.log("[INFO] Handling MFA 'Skip for now'...");
           try {
             await skipBtn.click({ timeout: 5000 });
-            await this.humanDelay(2000, 3000);
+            await this.humanDelay(1000, 1500);
             continue;
           } catch (e) {
             console.log("[WARN] 'Skip for now' blocked, checking popups...");
@@ -478,7 +478,7 @@ class TeamsBot {
           console.log("[INFO] Handling 'Use my password' prompt...");
           try {
             await usePass.click({ timeout: 5000 });
-            await this.humanDelay(2000, 3000);
+            await this.humanDelay(1000, 1500);
             continue;
           } catch (e) {
             console.log("[WARN] 'Use Password' prompt blocked, checking popups...");
@@ -492,7 +492,7 @@ class TeamsBot {
         // 5.6 Tangani popup umum SETELAH semua pengecekan MFA selesai
         await this.handlePopups();
 
-        await this.page.waitForTimeout(2500); // Tunggu antar scan
+        await this.page.waitForTimeout(800); // Tunggu antar scan
       }
 
       // Verifikasi akhir sebelum lanjut ke Step 6
@@ -509,13 +509,13 @@ class TeamsBot {
         "📂 Membuka menu 'Pengguna' di panel navigasi kiri...",
       );
 
-      await this.waitForSpinnerGone(1000);
+      await this.waitForSpinnerGone(200);
       await this.handlePopups(); // One more check before interacting
       const navLocator = this.page
         .locator('[data-hint="ReactLeftNav"]')
         .first();
       await this.waitForVisible(navLocator);
-      await this.humanDelay(1000, 2000);
+      await this.humanDelay(400, 800);
 
       const usersMenu = this.page
         .locator(
@@ -529,7 +529,7 @@ class TeamsBot {
       if (isExpanded !== "true") {
         console.log("[INFO] Users menu is collapsed, clicking to expand...");
         await usersMenu.click();
-        await this.humanDelay(1000, 2000);
+        await this.humanDelay(500, 1000);
       } else {
         console.log("[INFO] Users menu is already expanded.");
       }
@@ -549,7 +549,7 @@ class TeamsBot {
       await activeUsersLink.click();
 
       console.log("[INFO] Waiting for Active users list to appear...");
-      await this.waitForSpinnerGone(1000);
+      await this.waitForSpinnerGone(200);
 
       // 8. Search account by email in the user list and select
       const fullEmail = this.accountConfig.microsoftAccount.email;
@@ -581,7 +581,7 @@ class TeamsBot {
       );
       await userRow.click();
 
-      await this.humanDelay(2000, 3000);
+      await this.humanDelay(800, 1500);
 
       // 9. terus pilih yang licences dan apps
       await remoteLogger.logStep(
@@ -596,7 +596,7 @@ class TeamsBot {
         .first();
       await this.waitForVisible(licensesTab);
       await licensesTab.click();
-      await this.waitForSpinnerGone(2000);
+      await this.waitForSpinnerGone(500);
 
       // 10. uncheck all checked checkboxes
       await remoteLogger.logStep(
@@ -605,17 +605,17 @@ class TeamsBot {
         "🔲 Menonaktifkan semua lisensi yang sedang aktif...",
       );
       try {
-        await this.waitForSpinnerGone(1000); // Ensure no spinner blocks the initial state
+        await this.waitForSpinnerGone(200); // Ensure no spinner blocks the initial state
         const checkboxSelector = 'input[type="checkbox"]';
         await this.page
           .locator(checkboxSelector)
           .first()
           .waitFor({ state: "visible", timeout: 15000 })
           .catch(() => { });
-        await this.page.waitForTimeout(3000);
+        await this.page.waitForTimeout(800);
 
         for (let attempt = 1; attempt <= 3; attempt++) {
-          await this.waitForSpinnerGone(1000);
+          await this.waitForSpinnerGone(200);
           const checkboxes = await this.page.locator(checkboxSelector).all();
           let changed = 0;
           for (const cb of checkboxes) {
@@ -627,7 +627,7 @@ class TeamsBot {
           }
 
           // Verification
-          await this.page.waitForTimeout(2000);
+          await this.page.waitForTimeout(800);
           const remaining = await this.page
             .locator('input[type="checkbox"]:checked')
             .count();
@@ -649,7 +649,7 @@ class TeamsBot {
               throw new Error(
                 `UNCHECK_ALL_FAILED: Still have ${remaining} checkboxes checked after 3 attempts.`,
               );
-            await this.waitForSpinnerGone(2000);
+            await this.waitForSpinnerGone(500);
           }
         }
       } catch (err) {
@@ -679,7 +679,7 @@ class TeamsBot {
 
       // Wait for completion message
       console.log("[INFO] Waiting for save completion...");
-      await this.waitForSpinnerGone(3000);
+      await this.waitForSpinnerGone(800);
       // 12. Navigating to product URL from config
       const catalogUrl =
         this.accountConfig.productUrl ||
@@ -703,7 +703,7 @@ class TeamsBot {
         waitUntil: "commit",
         timeout: HARD_TIMEOUT,
       });
-      await this.waitForSpinnerGone(3000);
+      await this.waitForSpinnerGone(800);
 
       // Check for 'This product is unavailable' or 'You are not eligible'
       console.log("[INFO] Checking for product availability...");
@@ -797,10 +797,10 @@ class TeamsBot {
         const payMonthly = this.page.locator('label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")').first();
         await payMonthly.click({ timeout: 5000 }).catch(async () => {
            // Fallback: click visual container
-           await this.page.locator('.ms-Checkbox:has-text("Pay monthly"), .ms-Checkbox:has-text("Bayar bulanan")').first().click({ force: true, timeout: 3000 }).catch(() => {});
+            await this.page.locator('.ms-Checkbox:has-text("Pay monthly"), .ms-Checkbox:has-text("Bayar bulanan")').first().click({ force: true, timeout: 3000 }).catch(() => {});
         });
         
-        await this.page.waitForTimeout(3000); // Wait for potential state changes
+        await this.page.waitForTimeout(1000); // Wait for potential state changes
 
         const isStillDisabled = await buyBtn.evaluate((btn) => {
           return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('is-disabled') || btn.getAttribute('disabled') !== null;
@@ -825,7 +825,7 @@ class TeamsBot {
 
         // Gunakan force: true hanya sebagai pengaman tambahan jika transisi butuh trigger lebih keras
         await buyBtn.click({ timeout: 10000, force: true }).catch(() => { });
-        await this.page.waitForTimeout(3000);
+        await this.page.waitForTimeout(1500);
 
         // Verifikasi apakah klik berhasil (URL berubah atau tombol hilang)
         const newUrl = this.page.url();
@@ -838,7 +838,7 @@ class TeamsBot {
         }
 
         console.warn("[WARN] 'Buy' click didn't seem to trigger anything. Retrying...");
-        await this.page.waitForTimeout(2000);
+        await this.page.waitForTimeout(1000);
       }
 
       if (!clickedSuccessfully) {
@@ -886,7 +886,7 @@ class TeamsBot {
               .first();
 
             await visualCheckbox.click({ force: true });
-            await this.page.waitForTimeout(1500);
+            await this.page.waitForTimeout(800);
 
             const nowChecked = await checkboxInput
               .isChecked()
@@ -900,7 +900,7 @@ class TeamsBot {
             if (attempt === 2) {
               console.log("[INFO] Fallback: clicking input directly via JS...");
               await checkboxInput.evaluate((el) => el.click());
-              await this.page.waitForTimeout(1500);
+              await this.page.waitForTimeout(800);
             }
 
             if (attempt === 3) {
@@ -1003,7 +1003,7 @@ class TeamsBot {
           throw new Error(`PLACE_ORDER_FAILED: ${detectedError}`);
         }
 
-        await this.page.waitForTimeout(2500); // Scan tiap 2.5s
+        await this.page.waitForTimeout(800);
       }
 
       if (!isSuccess) {
@@ -1012,7 +1012,7 @@ class TeamsBot {
         );
       }
 
-      await this.waitForSpinnerGone(5000);
+      await this.waitForSpinnerGone(1000);
 
       // 21. Buka https://teams.microsoft.com/v2/ di tab baru
       await remoteLogger.logStep(
@@ -1065,7 +1065,7 @@ class TeamsBot {
         if (await teamsSignInBtn.isVisible().catch(() => false)) {
           console.log("[INFO] 'Sign in' button detected, clicking...");
           await teamsSignInBtn.click();
-          await teamsPage.waitForTimeout(3000);
+          await teamsPage.waitForTimeout(1500);
           console.log("[INFO] Waiting for 'Start Trial' button to appear after Sign in...");
           await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
         } else {
@@ -1133,7 +1133,7 @@ class TeamsBot {
         waitUntil: "domcontentloaded",
         timeout: HARD_TIMEOUT,
       });
-      await this.waitForSpinnerGone(3000);
+      await this.waitForSpinnerGone(800);
 
       // 25. Search the same user again and select
       await remoteLogger.logStep(
@@ -1158,7 +1158,7 @@ class TeamsBot {
         .first();
       await this.waitForVisible(finalUserRow);
       await finalUserRow.click();
-      await this.humanDelay(2000, 3000);
+      await this.humanDelay(800, 1500);
 
       // 26. Licenses and apps
       await remoteLogger.logStep(
@@ -1173,7 +1173,7 @@ class TeamsBot {
         .first();
       await this.waitForVisible(finalLicensesTab);
       await finalLicensesTab.click();
-      await this.waitForSpinnerGone(2000);
+      await this.waitForSpinnerGone(500);
 
       // 27. Restore license - search by name from a prioritized list
       const licenseNames = [
@@ -1194,7 +1194,7 @@ class TeamsBot {
       );
 
       try {
-        await this.waitForSpinnerGone(1000);
+        await this.waitForSpinnerGone(200);
 
         // Tunggu sampai minimal satu checkbox muncul
         await this.page
@@ -1277,7 +1277,7 @@ class TeamsBot {
               `🖱️ Percobaan ke-${attempt}: Mengaktifkan centang lisensi '${foundLicenseName}'...`,
             );
             await targetCheckbox.click({ force: true });
-            await this.page.waitForTimeout(1500);
+            await this.page.waitForTimeout(800);
           } else {
             await remoteLogger.logStep(
               email,
@@ -1302,7 +1302,7 @@ class TeamsBot {
               27,
               `⚠️ Percobaan ke-${attempt}: Lisensi masih belum tercentang. Mencoba ulang...`,
             );
-            await this.waitForSpinnerGone(1000);
+            await this.waitForSpinnerGone(200);
           }
 
           if (attempt === 3 && !verifyChecked) {
@@ -1320,7 +1320,7 @@ class TeamsBot {
         throw err;
       }
 
-      await this.humanDelay(1000, 2000);
+      await this.humanDelay(500, 1000);
 
       // 28. Save changes
       await remoteLogger.logStep(
@@ -1335,7 +1335,7 @@ class TeamsBot {
         .first();
       await this.waitForVisible(finalSaveBtn);
       await finalSaveBtn.click();
-      await this.waitForSpinnerGone(5000);
+      await this.waitForSpinnerGone(1000);
 
       await remoteLogger.logSuccess(
         email,

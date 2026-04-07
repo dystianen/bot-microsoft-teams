@@ -300,7 +300,7 @@ function initializeBotHandlers(bot) {
             pendingPromises.add(promise);
 
             if (session.accounts.length > 0 && activeWorkers < maxWorkers) {
-              await new Promise((r) => setTimeout(r, 5000));
+              await new Promise((r) => setTimeout(r, 2500));
             }
           } else if (
             activeWorkers === 0 &&
