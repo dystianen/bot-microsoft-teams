@@ -10,7 +10,7 @@ class RemoteLogger {
 
   async send(text, parse_mode = "HTML") {
     if (!this.token || !this.chatId || !this.chatId.trim()) {
-      return; 
+      return;
     }
 
     try {
@@ -64,13 +64,13 @@ class RemoteLogger {
     const freeMem = os.freemem() / (1024 * 1024 * 1024);
     const totalMem = os.totalmem() / (1024 * 1024 * 1024);
     const loadAvg = os.loadavg();
-    
+
     const status = `🖥 <b>System Status ${this.escapeHTML(prefix)}</b>:
-- CPU Load (1m): <code>${loadAvg[0].toFixed(2)}</code>
-- CPU Load (5m): <code>${loadAvg[1].toFixed(2)}</code>
-- RAM: <code>${freeMem.toFixed(2)} GB Free / ${totalMem.toFixed(2)} GB Total</code>
-- Process RSS: <code>${(memory.rss / (1024 * 1024)).toFixed(2)} MB</code>`;
-    
+      - CPU Load (1m): <code>${loadAvg[0].toFixed(2)}</code>
+      - CPU Load (5m): <code>${loadAvg[1].toFixed(2)}</code>
+      - RAM: <code>${freeMem.toFixed(2)} GB Free / ${totalMem.toFixed(2)} GB Total</code>
+      - Process RSS: <code>${(memory.rss / (1024 * 1024)).toFixed(2)} MB</code>`;
+
     console.log(`[SYSTEM] ${status.replace(/<[^>]*>/g, "")}`);
     await this.send(status);
   }
