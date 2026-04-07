@@ -11,14 +11,50 @@ class RemoteLogger {
 
   async send(text, parse_mode = "HTML") {
     if (!this.token || !this.chatId || !this.chatId.trim()) return;
-    try {
-      await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-        chat_id: this.chatId,
-        text: text.substring(0, 4000),
-        parse_mode,
-      });
-    } catch (err) {
-      console.error(`[RemoteLogger] Send failed: ${err.message}`);
+
+    // Split text into chunks to avoid 4096-char Telegram limit and broken HTML entities
+    const CHUNK_SIZE = 4000;
+    const chunks = [];
+    
+    if (text.length <= CHUNK_SIZE) {
+      chunks.push(text);
+    } else {
+      // Crude splitting: try to split at newline to keep formatting clean
+      let currentIdx = 0;
+      while (currentIdx < text.length) {
+        let chunk = text.substring(currentIdx, currentIdx + CHUNK_SIZE);
+        
+        // Try to find last newline within chunk to split cleanly
+        const lastNewline = chunk.lastIndexOf("\n");
+        if (lastNewline > 500 && currentIdx + CHUNK_SIZE < text.length) {
+           chunk = text.substring(currentIdx, currentIdx + lastNewline);
+           currentIdx += lastNewline + 1;
+        } else {
+           currentIdx += CHUNK_SIZE;
+        }
+        chunks.push(chunk);
+      }
+    }
+
+    for (const chunk of chunks) {
+      try {
+        await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+          chat_id: this.chatId,
+          text: chunk,
+          parse_mode,
+        });
+      } catch (err) {
+        // If HTML parsing fails (e.g. truncated tag), send as plain text fallback
+        if (err.response?.data?.description?.includes("can't parse entities")) {
+           await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+             chat_id: this.chatId,
+             text: chunk.replace(/<[^>]*>?/gm, ""), // Strip HTML
+             parse_mode: "",
+           }).catch(() => {});
+        } else {
+           console.error(`[RemoteLogger] Send failed: ${err.message}`);
+        }
+      }
     }
   }
 

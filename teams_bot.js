@@ -666,13 +666,13 @@ class TeamsBot {
       console.log("[INFO] Waiting for save completion...");
       // --- PURCHASE RETRY LOOP (Step 12 - 20) ---
       let purchaseSuccess = false;
-      for (let purchaseAttempt = 1; purchaseAttempt <= 3; purchaseAttempt++) {
+      for (let purchaseAttempt = 1; purchaseAttempt <= 2; purchaseAttempt++) {
         try {
           if (purchaseAttempt > 1) {
             await remoteLogger.logStep(
               email,
               12,
-              `🔄 Mencoba ulang proses pembelian (Percobaan ke-${purchaseAttempt}/3)...`,
+              `🔄 Mencoba ulang proses pembelian (Percobaan ke-${purchaseAttempt}/2)...`,
             );
             await this.page.reload({ waitUntil: "domcontentloaded" });
             await this.waitForSpinnerGone(2000);
@@ -1105,10 +1105,10 @@ class TeamsBot {
           if (
             (err.message.includes("something happened") ||
               err.message.includes("Terjadi kesalahan")) &&
-            purchaseAttempt < 3
+            purchaseAttempt < 2
           ) {
             console.warn(
-              `[RETRY] Purchase Failed with 'Something happened'. Attempt ${purchaseAttempt}/3. Reloading...`,
+              `[RETRY] Purchase Failed with 'Something happened'. Attempt ${purchaseAttempt}/2. Reloading...`,
             );
             await this.page.reload({ waitUntil: "domcontentloaded" });
             await this.page.waitForTimeout(5000);
