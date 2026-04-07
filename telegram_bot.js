@@ -338,17 +338,18 @@ function initializeBotHandlers(bot) {
           // Send summary to remoteLogger
           const processedCount = queueResults.success.length + queueResults.failed.length;
           let summaryMsg = `🏁 <b>Batch Queue Finished</b>\n`;
-          summaryMsg += `🔢 Total Antrian: <code>${originalTotal}</code>\n`;
-          summaryMsg += `✅ Berhasil: <code>${queueResults.success.length}</code>\n`;
-          summaryMsg += `❌ Gagal: <code>${queueResults.failed.length}</code>\n`;
+          
+          summaryMsg += `🔢 Total: <code>${originalTotal}</code>\n`;
+          summaryMsg += `✅ Success: <code>${queueResults.success.length}</code>\n`;
+          summaryMsg += `❌ Failed: <code>${queueResults.failed.length}</code>\n`;
           
           if (processedCount < originalTotal) {
-            summaryMsg += `🛑 Berhenti Paksa: <code>${originalTotal - processedCount}</code> akun dilewati\n`;
+            summaryMsg += `🛑 Stopped: <code>${originalTotal - processedCount}</code> accounts skipped\n`;
           }
           summaryMsg += `\n`;
 
           if (queueResults.success.length > 0) {
-            summaryMsg += `🟢 <b>DAFTAR BERHASIL:</b>\n`;
+            summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
             queueResults.success.forEach((r, i) => {
               summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
             });
