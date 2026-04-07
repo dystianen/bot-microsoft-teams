@@ -6,26 +6,54 @@ class RemoteLogger {
   constructor() {
     this.token = config.telegram?.token;
     this.chatId = config.telegram?.logChatId;
+    this.sessionMap = new Map(); // Store message_id per account (email)
   }
 
-  async send(text, parse_mode = "HTML") {
-    if (!this.token || !this.chatId || !this.chatId.trim()) {
-      return;
-    }
+  async _sendOrEdit(email, text, isFinal = false) {
+    if (!this.token || !this.chatId || !this.chatId.trim()) return;
 
+    const messageId = this.sessionMap.get(email);
+    
     try {
-      await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
-        chat_id: this.chatId,
-        text: text.substring(0, 4000), // Telegram limit per message is 4096
-        parse_mode,
-      });
-    } catch (err) {
-      if (err.response && err.response.data) {
-        console.error(`[RemoteLogger] Error 400: ${JSON.stringify(err.response.data)}`);
+      if (messageId) {
+        await axios.post(`https://api.telegram.org/bot${this.token}/editMessageText`, {
+          chat_id: this.chatId,
+          message_id: messageId,
+          text: text.substring(0, 4000),
+          parse_mode: "HTML",
+        });
       } else {
-        console.error(`[RemoteLogger] Failed: ${err.message}`);
+        const resp = await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+          chat_id: this.chatId,
+          text: text.substring(0, 4000),
+          parse_mode: "HTML",
+        });
+        if (resp.data?.result?.message_id) {
+          this.sessionMap.set(email, resp.data.result.message_id);
+        }
+      }
+    } catch (err) {
+      if (messageId) {
+        // Fallback: If edit fails, send new message
+        this.sessionMap.delete(email);
+        return this._sendOrEdit(email, text, isFinal);
+      }
+      console.error(`[RemoteLogger] Failed: ${err.message}`);
+    } finally {
+      if (isFinal) {
+        this.sessionMap.set(email, null); // Clear ID after final status
+        this.sessionMap.delete(email);
       }
     }
+  }
+
+  getProgressBar(current, total = 28) {
+    const size = 10;
+    const progress = Math.min(Math.max(current / total, 0), 1);
+    const filled = Math.round(size * progress);
+    const empty = size - filled;
+    const bar = "█".repeat(filled) + "░".repeat(empty);
+    return `<code>[${bar}] ${Math.round(progress * 100)}%</code>`;
   }
 
   escapeHTML(text) {
@@ -38,31 +66,55 @@ class RemoteLogger {
 
   async info(msg) {
     console.log(`[INFO] ${msg}`);
-    await this.send(`ℹ️ <b>[INFO]</b> ${this.escapeHTML(msg)}`);
+    // Info messages don't need editing, they are general
+    if (!this.token || !this.chatId) return;
+    await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+      chat_id: this.chatId,
+      text: `ℹ️ <b>[INFO]</b> ${this.escapeHTML(msg)}`,
+      parse_mode: "HTML",
+    }).catch(() => {});
   }
 
   async logStep(email, stepNum, msg) {
-    const identifier = email ? `[<code>${this.escapeHTML(email.split("@")[0])}</code>]` : "";
-    console.log(`${identifier} [STEP ${stepNum}] ${msg}`);
-    await this.send(`${identifier} 🚀 <b>STEP ${stepNum}</b>: ${this.escapeHTML(msg)}`);
+    const user = email ? email.split("@")[0] : "unknown";
+    const identifier = `🚀 <b>Processing:</b> <code>${this.escapeHTML(user)}</code>`;
+    
+    console.log(`[${user}] [STEP ${stepNum}] ${msg}`);
+    
+    let text = `${identifier}\n`;
+    text += `📍 <b>Current:</b> Step ${stepNum}/28\n`;
+    text += `📝 <b>Status:</b> ${this.escapeHTML(msg)}\n`;
+    text += `${this.getProgressBar(stepNum)}`;
+
+    await this._sendOrEdit(email, text, false);
   }
 
   async logError(email, msg, details = "") {
-    const identifier = email ? `[<code>${this.escapeHTML(email.split("@")[0])}</code>]` : "";
-    console.error(`${identifier} [ERROR] ${msg} ${details}`);
+    const user = email ? email.split("@")[0] : "unknown";
+    const identifier = `❌ <b>Failed:</b> <code>${this.escapeHTML(user)}</code>`;
     
-    let formattedMsg = `${identifier} ❌ <b>FAILURE DETECTED</b>\n\n`;
+    console.error(`[${user}] [ERROR] ${msg} ${details}`);
+    
+    let formattedMsg = `${identifier}\n\n`;
     formattedMsg += `<b>Issue:</b> ${this.escapeHTML(msg)}\n`;
     if (details) {
       formattedMsg += `\n<b>Technical Details:</b>\n<pre>${this.escapeHTML(details.substring(0, 1000))}</pre>`;
     }
-    await this.send(formattedMsg);
+    
+    await this._sendOrEdit(email, formattedMsg, true);
   }
 
   async logSuccess(email, msg) {
-    const identifier = email ? `[<code>${this.escapeHTML(email.split("@")[0])}</code>]` : "";
-    console.log(`${identifier} [SUCCESS] ${msg}`);
-    await this.send(`${identifier} ✅ <b>SUCCESS</b>: ${this.escapeHTML(msg)}`);
+    const user = email ? email.split("@")[0] : "unknown";
+    const identifier = `✅ <b>Success:</b> <code>${this.escapeHTML(user)}</code>`;
+    
+    console.log(`[${user}] [SUCCESS] ${msg}`);
+    
+    let text = `${identifier}\n`;
+    text += `🏁 <b>Status:</b> ${this.escapeHTML(msg)}\n`;
+    text += `${this.getProgressBar(28, 28)}`;
+
+    await this._sendOrEdit(email, text, true);
   }
 
   async reportSystemStatus(prefix = "") {
@@ -78,7 +130,12 @@ class RemoteLogger {
       - Process RSS: <code>${(memory.rss / (1024 * 1024)).toFixed(2)} MB</code>`;
 
     console.log(`[SYSTEM] ${status.replace(/<[^>]*>/g, "")}`);
-    await this.send(status);
+    if (!this.token || !this.chatId) return;
+    await axios.post(`https://api.telegram.org/bot${this.token}/sendMessage`, {
+      chat_id: this.chatId,
+      text: status,
+      parse_mode: "HTML",
+    }).catch(() => {});
   }
 }
 
