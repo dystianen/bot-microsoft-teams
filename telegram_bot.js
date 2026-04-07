@@ -166,6 +166,10 @@ function initializeBotHandlers(bot) {
       let globalIdx = 0;
       const originalTotal = session.accounts.length;
       const pendingPromises = new Set();
+      const queueResults = {
+        success: [],
+        failed: [],
+      };
 
       const processAccount = async (accountData, currentIdx) => {
         await safeSendMessage(
@@ -197,18 +201,35 @@ function initializeBotHandlers(bot) {
           await historyRecord.save().catch((e) => {});
 
           if (result.status === "SUCCESS") {
+            queueResults.success.push({ email: accountData.email });
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
             // Calculate WIB (UTC+7) manually and format without the 'true' flag
-            const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
-            message += `Time: <code>${date.format(nowWib, "DD MMM YYYY HH:mm")}</code>\n`;
+            const timeWib = new Date().toLocaleString("en-GB", {
+              timeZone: "Asia/Jakarta",
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false
+            }).replace(",", "");
+            message += `Time: <code>${timeWib}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           } else {
+            queueResults.failed.push({
+              email: accountData.email,
+              log: result.log,
+            });
             let message = `❌ <b>Failed [${currentIdx}/${originalTotal}] for ${escapeHTML(accountData.email)}</b>\n`;
             message += `Log: ${escapeHTML(result.log || "Unknown error")}`;
             await safeSendMessage(chatId, message, { parse_mode: "HTML" });
           }
         } catch (err) {
+          queueResults.failed.push({
+            email: accountData.email,
+            log: err.message,
+          });
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
           const failRecord = new AccountHistory({
             email: accountData.email,
@@ -273,6 +294,28 @@ function initializeBotHandlers(bot) {
             mainMenu,
           );
         } else {
+          // Send summary to remoteLogger
+          let summaryMsg = `🏁 <b>Batch Queue Finished</b>\n`;
+          summaryMsg += `Total: <code>${originalTotal}</code> | ✅ Success: <code>${queueResults.success.length}</code> | ❌ Failed: <code>${queueResults.failed.length}</code>\n\n`;
+
+          if (queueResults.success.length > 0) {
+            summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
+            queueResults.success.forEach((r, i) => {
+              summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
+            });
+            summaryMsg += `────────────────\n`;
+          }
+
+          if (queueResults.failed.length > 0) {
+            summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
+            queueResults.failed.forEach((r, i) => {
+              summaryMsg += `${i + 1}. ❌ <code>${escapeHTML(r.email)}</code>\n`;
+              summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || "No log")}</i>\n`;
+              summaryMsg += `────────────────\n`;
+            });
+          }
+
+          await remoteLogger.send(summaryMsg);
           await remoteLogger.reportSystemStatus("(Queue Finished)");
           bot.sendMessage(
             chatId,
@@ -317,8 +360,14 @@ function initializeBotHandlers(bot) {
       if (successRecords.length > 0) {
         message += "🟢 <b>SUCCESS:</b>\n";
         successRecords.forEach((rec) => {
-          const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
-          const timeStr = date.format(dateWib, "DD/MM HH:mm");
+          const timeStr = rec.createdAt.toLocaleString("en-GB", {
+            timeZone: "Asia/Jakarta",
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }).replace(/\//g, "/");
           message += `${counter++}. ✅ <code>${timeStr}</code>\n`;
           message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
           message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
@@ -330,8 +379,14 @@ function initializeBotHandlers(bot) {
       if (failedRecords.length > 0) {
         message += "🔴 <b>FAILED:</b>\n";
         failedRecords.forEach((rec) => {
-          const dateWib = new Date(rec.createdAt.getTime() + 7 * 60 * 60 * 1000);
-          const timeStr = date.format(dateWib, "DD/MM HH:mm");
+          const timeStr = rec.createdAt.toLocaleString("en-GB", {
+            timeZone: "Asia/Jakarta",
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+          }).replace(/\//g, "/");
           message += `${counter++}. ❌ <code>${timeStr}</code>\n`;
           message += `📧 <code>${escapeHTML(rec.email)}</code>\n`;
           message += `🔑 <code>${escapeHTML(rec.password)}</code>\n`;
