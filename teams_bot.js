@@ -703,12 +703,6 @@ class TeamsBot {
         waitUntil: "commit",
         timeout: HARD_TIMEOUT,
       });
-
-      console.log("[INFO] Waiting for spinner to appear and finish...");
-      const spinnerLocator = this.page.locator(SPINNER_SELECTOR).first();
-      await spinnerLocator
-        .waitFor({ state: "visible", timeout: 10000 })
-        .catch(() => { });
       await this.waitForSpinnerGone(3000);
 
       // Check for 'This product is unavailable' or 'You are not eligible'
@@ -724,8 +718,6 @@ class TeamsBot {
         const errorText = await unavailableMarker.innerText().catch(() => "Produk tidak tersedia");
         throw new Error(`MARKETPLACE_ERROR: ${errorText}. Bot tidak dapat melanjutkan dengan akun ini.`);
       }
-
-      // Remaining steps will adapt based on the product defined above.
 
       // 15.5 Select a plan
       if (!isBusinessAppsFree) {
