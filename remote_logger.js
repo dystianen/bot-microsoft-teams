@@ -114,6 +114,7 @@ class RemoteLogger {
 
       try {
         if (messageId) {
+          // Sudah ada message sebelumnya — edit saja
           await this._post("editMessageText", {
             chat_id: this.chatId,
             message_id: messageId,
@@ -121,29 +122,33 @@ class RemoteLogger {
             parse_mode: "HTML",
           });
         } else {
+          // Belum ada — kirim baru, tapi set dulu ke "pending"
+          // supaya kalau ada step berikutnya yang masuk queue
+          // mereka tunggu message_id ini selesai
+          this.sessionMap.set(email, "pending");
+
           const resp = await this._post("sendMessage", {
             chat_id: this.chatId,
             text: truncated,
             parse_mode: "HTML",
           });
+
           if (resp?.data?.result?.message_id) {
             this.sessionMap.set(email, resp.data.result.message_id);
+          } else {
+            this.sessionMap.delete(email);
           }
         }
       } catch (err) {
-        // Edit gagal (message dihapus dll) — fallback ke send baru
-        if (messageId) {
-          this.sessionMap.delete(email);
-          const resp = await this._post("sendMessage", {
-            chat_id: this.chatId,
-            text: truncated,
-            parse_mode: "HTML",
-          });
-          if (resp?.data?.result?.message_id) {
-            this.sessionMap.set(email, resp.data.result.message_id);
-          }
-        } else {
-          throw err;
+        // Edit gagal (message dihapus manual dll) — reset dan kirim baru
+        this.sessionMap.delete(email);
+        const resp = await this._post("sendMessage", {
+          chat_id: this.chatId,
+          text: truncated,
+          parse_mode: "HTML",
+        });
+        if (resp?.data?.result?.message_id) {
+          this.sessionMap.set(email, resp.data.result.message_id);
         }
       } finally {
         if (isFinal) this.sessionMap.delete(email);
