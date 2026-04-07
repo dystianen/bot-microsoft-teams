@@ -1026,6 +1026,9 @@ class TeamsBot {
         "⏳ Menunggu Teams siap (Sign in atau Start Trial)...",
       );
 
+      // Wait for page to stabilize after potential blank check
+      await teamsPage.waitForTimeout(2000);
+
       const teamsSignInBtn = teamsPage
         .locator(
           'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")',
@@ -1034,7 +1037,13 @@ class TeamsBot {
 
       const startTrialBtn = teamsPage
         .locator(
-          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial")',
+          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Try now"), a:has-text("Get started")',
+        )
+        .first();
+
+      const pickAccountHeader = teamsPage
+        .locator(
+          'div:has-text("Pick an account"), div:has-text("Pilih akun"), h1:has-text("Pick an account"), h1:has-text("Pilih akun")',
         )
         .first();
 
@@ -1043,16 +1052,31 @@ class TeamsBot {
         .first();
 
       try {
-        console.log("[INFO] Waiting for Sign In, Start Trial, or Permission Error (Race)...");
-        // Race between the buttons with a 30s timeout to avoid long waits
+        console.log("[INFO] Waiting for Sign In, Start Trial, Pick Account, or Permission (Race 60s)...");
+        // Race between elements with an extended 60s timeout
         await teamsSignInBtn
           .or(startTrialBtn)
+          .or(pickAccountHeader)
           .or(permissionErrorLocator)
-          .waitFor({ state: "visible", timeout: 30000 });
+          .waitFor({ state: "visible", timeout: 60000 });
 
         if (await permissionErrorLocator.isVisible().catch(() => false)) {
           console.error("[ERROR] Permission error page detected.");
           throw new Error("Don't have the required permissions to access this org");
+        }
+
+        // Handle "Pick an account" screen if it appears
+        if (await pickAccountHeader.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Pick an account' detected, looking for current user email...");
+          const targetAccountItem = teamsPage.locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`).first();
+          if (await targetAccountItem.isVisible().catch(() => false)) {
+            await targetAccountItem.click();
+            await teamsPage.waitForTimeout(2000);
+          } else {
+             // Fallback: click first account tile
+             await teamsPage.locator('div[role="listitem"], .tile-container').first().click().catch(() => {});
+             await teamsPage.waitForTimeout(2000);
+          }
         }
 
         if (await teamsSignInBtn.isVisible().catch(() => false)) {
@@ -1060,9 +1084,9 @@ class TeamsBot {
           await teamsSignInBtn.click();
           await teamsPage.waitForTimeout(1500);
           console.log("[INFO] Waiting for 'Start Trial' button to appear after Sign in...");
-          await startTrialBtn.waitFor({ state: "visible", timeout: 60000 });
+          await startTrialBtn.waitFor({ state: "visible", timeout: 45000 });
         } else {
-          console.log("[INFO] 'Start Trial' button already visible, proceeding.");
+          console.log("[INFO] Proceeding to Start Trial steps.");
         }
 
         await remoteLogger.logStep(
