@@ -327,52 +327,55 @@ function initializeBotHandlers(bot) {
         );
       } finally {
         session.running = false;
-        if (session.forceStop) {
-          session.forceStop = false;
-          bot.sendMessage(
-            chatId,
-            "🛑 Queue processing stopped successfully.",
-            mainMenu,
-          );
-        } else {
-          // Send summary to remoteLogger
-          const processedCount = queueResults.success.length + queueResults.failed.length;
-          let summaryMsg = `🏁 <b>Batch Queue Finished</b>\n`;
-          summaryMsg += `🔢 Total Antrian: <code>${originalTotal}</code>\n`;
-          summaryMsg += `✅ Berhasil: <code>${queueResults.success.length}</code>\n`;
-          summaryMsg += `❌ Gagal: <code>${queueResults.failed.length}</code>\n`;
-          
-          if (processedCount < originalTotal) {
-            summaryMsg += `🛑 Berhenti Paksa: <code>${originalTotal - processedCount}</code> akun dilewati\n`;
-          }
-          summaryMsg += `\n`;
+        const processedCount =
+          queueResults.success.length + queueResults.failed.length;
+        let summaryMsg = session.forceStop
+          ? `🛑 <b>Batch Queue Stopped Manually</b>\n`
+          : `🏁 <b>Batch Queue Finished</b>\n`;
 
-          if (queueResults.success.length > 0) {
-            summaryMsg += `🟢 <b>DAFTAR BERHASIL:</b>\n`;
-            queueResults.success.forEach((r, i) => {
-              summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
-            });
+        summaryMsg += `🔢 Total Antrian: <code>${originalTotal}</code>\n`;
+        summaryMsg += `✅ Berhasil: <code>${queueResults.success.length}</code>\n`;
+        summaryMsg += `❌ Gagal: <code>${queueResults.failed.length}</code>\n`;
+
+        if (processedCount < originalTotal) {
+          summaryMsg += `🛑 Berhenti Paksa: <code>${originalTotal - processedCount}</code> akun dilewati\n`;
+        }
+        summaryMsg += `\n`;
+
+        if (queueResults.success.length > 0) {
+          summaryMsg += `🟢 <b>DAFTAR BERHASIL:</b>\n`;
+          queueResults.success.forEach((r, i) => {
+            summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
+          });
+          summaryMsg += `────────────────\n`;
+        }
+
+        if (queueResults.failed.length > 0) {
+          summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
+          queueResults.failed.forEach((r, i) => {
+            summaryMsg += `${i + 1}. ❌ <code>${escapeHTML(r.email)}</code>\n`;
+            summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || "No log")}</i>\n`;
             summaryMsg += `────────────────\n`;
-          }
+          });
+        }
 
-          if (queueResults.failed.length > 0) {
-            summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
-            queueResults.failed.forEach((r, i) => {
-              summaryMsg += `${i + 1}. ❌ <code>${escapeHTML(r.email)}</code>\n`;
-              summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || "No log")}</i>\n`;
-              summaryMsg += `────────────────\n`;
-            });
-          }
+        const isManual = session.forceStop;
+        if (isManual) session.forceStop = false;
 
-          await remoteLogger.send(summaryMsg);
-          await remoteLogger.reportSystemStatus("(Queue Finished)");
+        // Send summary to remoteLogger
+        await remoteLogger.send(summaryMsg);
+        await remoteLogger.reportSystemStatus(
+          isManual ? "(Queue Stopped)" : "(Queue Finished)",
+        );
 
-          // Also send detailed report to user DM directly (chunked)
-          const CHUNK_SIZE = 4000;
-          for (let i = 0; i < summaryMsg.length; i += CHUNK_SIZE) {
-            const chunk = summaryMsg.substring(i, i + CHUNK_SIZE);
-            await safeSendMessage(chatId, chunk, { parse_mode: "HTML", reply_markup: mainMenu });
-          }
+        // Also send detailed report to user DM directly (chunked)
+        const CHUNK_SIZE = 4000;
+        for (let i = 0; i < summaryMsg.length; i += CHUNK_SIZE) {
+          const chunk = summaryMsg.substring(i, i + CHUNK_SIZE);
+          await safeSendMessage(chatId, chunk, {
+            parse_mode: "HTML",
+            reply_markup: mainMenu,
+          });
         }
       }
     };
