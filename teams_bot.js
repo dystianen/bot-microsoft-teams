@@ -408,7 +408,7 @@ class TeamsBot {
           continue; // Lanjutkan loop tanpa berhenti
         }
         // Jika error fatal lainnya, lempar error
-        throw new Error(`LOGIN_FAILED: ${err}`);
+        throw new Error(`MICROSOFT_SYSTEM_ERROR: ${err}`);
       }
 
       // 2. Cek apakah sudah sampai Dashboard?

@@ -220,7 +220,39 @@ function initializeBotHandlers(bot) {
 
         activeAccountsCount++;
         try {
-          const result = await processSingleAccount(pairedData, currentIdx - 1, originalTotal);
+          let lastResult = null;
+          let attempts = 0;
+          const maxAttempts = 2; // Total attempt (1 initial + 1 retry)
+
+          while (attempts < maxAttempts) {
+            attempts++;
+            const result = await processSingleAccount(pairedData, currentIdx - 1, originalTotal);
+            lastResult = result;
+
+            if (result.status === 'SUCCESS') break;
+
+            // Detect if the error is retryable (system-related)
+            const errMsg = (result.log || '').toLowerCase();
+            const isRetryable =
+              errMsg.includes('something went wrong') ||
+              errMsg.includes('something happened') ||
+              errMsg.includes('terjadi sesuatu') ||
+              errMsg.includes('microsoft_error');
+
+            if (!isRetryable || attempts >= maxAttempts) break;
+
+            // Inform user about the retry
+            await safeSendMessage(
+              chatId,
+              `🔄 <b>Retry [${attempts}/${maxAttempts - 1}]</b> for <code>${escapeHTML(accountData.email)}</code>\nError sistem terdeteksi, mencoba ulang otomatis dalam 5 detik...`,
+              { parse_mode: 'HTML' }
+            );
+
+            // Wait before starting over with a fresh browser
+            await new Promise((r) => setTimeout(r, 5000));
+          }
+
+          const result = lastResult;
 
           const historyRecord = new AccountHistory({
             email: accountData.email,
