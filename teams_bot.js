@@ -523,79 +523,79 @@ class TeamsBot {
         .catch(() => {});
       await this.page.waitForTimeout(800);
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await this.waitForSpinnerGone(200);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await this.waitForSpinnerGone(200);
 
-        // 1. Cek apakah ada error "Something went wrong" dari Microsoft
-        const pageErr = await this.checkForError();
-        if (
-          pageErr &&
-          (pageErr.toLowerCase().includes('went wrong') ||
-            pageErr.toLowerCase().includes('kesalahan') ||
-            pageErr.toLowerCase().includes('happened'))
-        ) {
-          console.warn(`[RETRY] Terdeteksi "${pageErr}" saat uncheck. Reloading...`);
-          await this.page.reload({ waitUntil: 'domcontentloaded' });
-          await this.page.waitForTimeout(5000);
-          await this.handlePopups();
+          // 1. Cek apakah ada error "Something went wrong" dari Microsoft
+          const pageErr = await this.checkForError();
+          if (
+            pageErr &&
+            (pageErr.toLowerCase().includes('went wrong') ||
+              pageErr.toLowerCase().includes('kesalahan') ||
+              pageErr.toLowerCase().includes('happened'))
+          ) {
+            console.warn(`[RETRY] Terdeteksi "${pageErr}" saat uncheck. Reloading...`);
+            await this.page.reload({ waitUntil: 'domcontentloaded' });
+            await this.page.waitForTimeout(5000);
+            await this.handlePopups();
 
-          // Setelah reload, kita harus pastikan panel user dan tab licenses terbuka lagi
-          const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
-          if (!(await licensesTab.isVisible().catch(() => false))) {
-            // Jika tertutup, cari ulang user (asumsi search input masih ada atau reload membersihkan state)
-            const searchInput = this.page.locator(SELECTORS.searchInput).first();
-            await this.waitForVisible(searchInput);
-            await searchInput.fill(email);
-            await this.page.keyboard.press('Enter');
-            await this.waitForSpinnerGone(2000);
-            await this.page.locator(SELECTORS.userRow).first().click();
-            await this.humanDelay(800, 1500);
+            // Setelah reload, kita harus pastikan panel user dan tab licenses terbuka lagi
+            const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
+            if (!(await licensesTab.isVisible().catch(() => false))) {
+              // Jika tertutup, cari ulang user (asumsi search input masih ada atau reload membersihkan state)
+              const searchInput = this.page.locator(SELECTORS.searchInput).first();
+              await this.waitForVisible(searchInput);
+              await searchInput.fill(email);
+              await this.page.keyboard.press('Enter');
+              await this.waitForSpinnerGone(2000);
+              await this.page.locator(SELECTORS.userRow).first().click();
+              await this.humanDelay(800, 1500);
+            }
+            await licensesTab.click();
+            await this.waitForSpinnerGone(500);
+            continue; // Ulangi attempt ini
           }
-          await licensesTab.click();
-          await this.waitForSpinnerGone(500);
-          continue; // Ulangi attempt ini
-        }
 
-        let changed = 0;
-        const checkboxes = await this.page.locator(checkboxSelector).all();
-        for (const cb of checkboxes) {
-          if (await cb.isChecked()) {
-            await cb.click({ force: true });
-            changed++;
-            await this.page.waitForTimeout(300);
+          let changed = 0;
+          const checkboxes = await this.page.locator(checkboxSelector).all();
+          for (const cb of checkboxes) {
+            if (await cb.isChecked()) {
+              await cb.click({ force: true });
+              changed++;
+              await this.page.waitForTimeout(300);
+            }
           }
-        }
 
-        // Verification
-        await this.page.waitForTimeout(800);
-        const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
+          // Verification
+          await this.page.waitForTimeout(800);
+          const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
 
-        if (remaining === 0) {
-          await remoteLogger.logStep(
-            email,
-            10,
-            `✅ Semua lisensi berhasil dinonaktifkan (Percobaan ke-${attempt}).`
-          );
-          break;
-        } else {
-          await remoteLogger.logStep(
-            email,
-            10,
-            `⚠️ Percobaan ke-${attempt}: Masih ada ${remaining} lisensi yang aktif. Mencoba ulang...`
-          );
-          if (attempt === 3)
-            throw new Error(
-              `UNCHECK_ALL_FAILED: Still have ${remaining} checkboxes checked after 3 attempts.`
+          if (remaining === 0) {
+            await remoteLogger.logStep(
+              email,
+              10,
+              `✅ Semua lisensi berhasil dinonaktifkan (Percobaan ke-${attempt}).`
             );
-          await this.waitForSpinnerGone(500);
+            break;
+          } else {
+            await remoteLogger.logStep(
+              email,
+              10,
+              `⚠️ Percobaan ke-${attempt}: Masih ada ${remaining} lisensi yang aktif. Mencoba ulang...`
+            );
+            if (attempt === 3)
+              throw new Error(
+                `UNCHECK_ALL_FAILED: Still have ${remaining} checkboxes checked after 3 attempts.`
+              );
+            await this.waitForSpinnerGone(500);
+          }
+        } catch (err) {
+          if (attempt === 3) throw err;
+          console.warn(`[WARN] Attempt ${attempt} failed: ${err.message}. Retrying...`);
+          await this.page.waitForTimeout(2000);
         }
-      } catch (err) {
-        if (attempt === 3) throw err;
-        console.warn(`[WARN] Attempt ${attempt} failed: ${err.message}. Retrying...`);
-        await this.page.waitForTimeout(2000);
       }
-    }
     } catch (err) {
       await remoteLogger.logError(
         email,
@@ -727,7 +727,7 @@ class TeamsBot {
               .first();
             if (await oneYear.isVisible({ timeout: 5000 }).catch(() => false)) {
               await oneYear.click({ force: true }).catch(() => {});
-              await this.page.waitForTimeout(500);
+              await this.page.waitForTimeout(1000);
             }
           }
 
@@ -757,15 +757,11 @@ class TeamsBot {
               .first();
             if (await payMonthly.isVisible({ timeout: 5000 }).catch(() => false)) {
               await payMonthly.click({ force: true }).catch(() => {});
-              await this.page.waitForTimeout(500);
-            } else if (retry === 1) {
-              console.log('[WARN] Pay monthly not visible yet, waiting...');
-              await this.page.waitForTimeout(2000);
-              continue;
+              await this.page.waitForTimeout(1000);
             }
           }
 
-          await this.page.waitForTimeout(1000);
+          await this.page.waitForTimeout(2000);
 
           const buyBtnLocator = this.page
             .locator(
@@ -799,14 +795,14 @@ class TeamsBot {
               buyBtn = buyBtnLocator;
               break;
             }
-            console.warn(`[WARN] Buy button visible but disabled (attempt ${retry}).`);
-          } else {
-            console.warn(`[WARN] Buy button not visible (attempt ${retry}).`);
           }
 
-          if (retry === 4)
-            throw new Error('BUY_BUTTON_NOT_FOUND: Button tidak ditemukan setelah 4 attempts.');
-          await this.page.waitForTimeout(1500);
+          if (retry === 4) {
+            throw new Error(
+              'BUY_BUTTON_NOT_FOUND: Opsi billing atau tombol Beli tidak aktif setelah >60 detik. Memicu reload...'
+            );
+          }
+          await this.page.waitForTimeout(15000);
         }
 
         await remoteLogger.logStep(email, 17, "🛍️ Mengklik tombol 'Beli'...");
