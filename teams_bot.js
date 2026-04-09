@@ -393,7 +393,23 @@ class TeamsBot {
     while (Date.now() - loginLoopStart < 120000) {
       // 1. Cek Error Page / Pesan Kesalahan (Prioritas Utama)
       const err = await this.checkForError();
-      if (err) throw new Error(`LOGIN_FAILED: ${err}`);
+      if (err) {
+        const lowerErr = err.toLowerCase();
+        // Jika error adalah "Something went wrong" atau error jaringan sementara, reload saja
+        if (
+          lowerErr.includes('went wrong') ||
+          lowerErr.includes('happened') ||
+          lowerErr.includes('terjadi sesuatu') ||
+          lowerErr.includes('terjadi kesalahan')
+        ) {
+          console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
+          await this.page.reload({ waitUntil: 'domcontentloaded' });
+          await this.page.waitForTimeout(5000);
+          continue; // Lanjutkan loop tanpa berhenti
+        }
+        // Jika error fatal lainnya, lempar error
+        throw new Error(`LOGIN_FAILED: ${err}`);
+      }
 
       // 2. Cek apakah sudah sampai Dashboard?
       if (await dashboardMarker.isVisible().catch(() => false)) {
@@ -888,11 +904,14 @@ class TeamsBot {
         await this.waitForSpinnerGone(1000);
         break; // EXIT RETRY LOOP IF SUCCESS
       } catch (err) {
+        const lowerMsg = err.message.toLowerCase();
         if (
           purchaseAttempt < 2 &&
-          (err.message.includes('something happened') ||
-            err.message.includes('Terjadi kesalahan') ||
-            err.message.includes('BUY_BUTTON_NOT_FOUND'))
+          (lowerMsg.includes('something happened') ||
+            lowerMsg.includes('went wrong') ||
+            lowerMsg.includes('terjadi kesalahan') ||
+            lowerMsg.includes('terjadi sesuatu') ||
+            lowerMsg.includes('buy_button_not_found'))
         ) {
           console.warn(`[RETRY] Purchase failed. Attempt ${purchaseAttempt}/2. Reloading...`);
           await this.page.reload({ waitUntil: 'domcontentloaded' });
