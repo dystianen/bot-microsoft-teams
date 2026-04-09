@@ -392,6 +392,11 @@ class TeamsBot {
     const loginLoopStart = Date.now();
 
     while (Date.now() - loginLoopStart < 120000) {
+      // 1. Cek Error Page / Pesan Kesalahan (Prioritas Utama)
+      const err = await this.checkForError();
+      if (err) throw new Error(`LOGIN_FAILED: ${err}`);
+
+      // 2. Cek apakah sudah sampai Dashboard?
       if (await dashboardMarker.isVisible().catch(() => false)) {
         console.log('[SUCCESS] Dashboard detected!');
         await this.humanDelay(1000, 1500);
@@ -399,12 +404,18 @@ class TeamsBot {
         return;
       }
 
+      // 3. Cek rintangan: Stay signed in (KMSI)
+      // Kita hanya menangani KMSI jika form password sudah hilang
+      const passField = this.page.locator('input[type="password"]').first();
+      const isPassVisible = await passField.isVisible().catch(() => false);
+
       const yesBtn = this.page
         .locator(
           'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], #idSIButton9'
         )
         .first();
-      if (await yesBtn.isVisible().catch(() => false)) {
+
+      if (!isPassVisible && (await yesBtn.isVisible().catch(() => false))) {
         console.log("[INFO] Handling 'Stay signed in'...");
         try {
           await yesBtn.click({ timeout: 5000 });
@@ -415,6 +426,7 @@ class TeamsBot {
         }
       }
 
+      // 4. Cek rintangan: MFA Skip
       const skipBtn = this.page
         .locator(
           'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton'
@@ -431,6 +443,7 @@ class TeamsBot {
         }
       }
 
+      // 5. Cek rintangan: Use Password prompt
       const usePass = this.page
         .locator('text=Use my password, text=Gunakan kata sandi saya, #allowInterrupt')
         .first();
@@ -444,9 +457,6 @@ class TeamsBot {
           console.log("[WARN] 'Use Password' prompt blocked.");
         }
       }
-
-      const err = await this.checkForError();
-      if (err) throw new Error(`LOGIN_FAILED: ${err}`);
 
       await this.handlePopups();
       await this.page.waitForTimeout(800);
