@@ -45,45 +45,30 @@ class TeamsBot {
     let errorMsg = null;
 
     const checkLoop = async () => {
-      try {
-        while (!isDone) {
-          await this.page.waitForTimeout(1500).catch(() => {
-            isDone = true;
-          });
-          if (isDone) break;
+      while (!isDone) {
+        await this.page.waitForTimeout(1500).catch(() => {
+          isDone = true;
+        });
+        if (isDone) break;
 
-          const detectedError = await this.checkForError();
-          if (detectedError) {
-            errorMsg = detectedError;
-            isDone = true;
-            break;
-          }
+        const detectedError = await this.checkForError();
+        if (detectedError) {
+          errorMsg = detectedError;
+          isDone = true;
+          break;
         }
-      } catch (e) {
-        isDone = true;
       }
     };
 
-    try {
-      const result = await Promise.race([
-        promise.finally(() => {
-          isDone = true;
-        }),
-        new Promise((_, rej) =>
-          setTimeout(() => {
-            isDone = true;
-            rej(new Error('Monitor timeout'));
-          }, timeout)
-        ),
-      ]);
-
-      await checkLoop().catch(() => {});
-
-      if (errorMsg) throw new Error(`MICROSOFT_ERROR: ${errorMsg}`);
-      return result;
-    } finally {
+    const result = await Promise.race([promise, checkLoop()]).finally(() => {
       isDone = true;
+    });
+
+    if (errorMsg) {
+      throw new Error(`MICROSOFT_ERROR: ${errorMsg}`);
     }
+
+    return result;
   }
 
   async checkForError() {
