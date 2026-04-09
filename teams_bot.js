@@ -94,6 +94,18 @@ class TeamsBot {
         'Please solve the puzzle',
         'error code',
         '715-123280',
+        'incorrect password',
+        'password incorrect',
+        'sandi salah',
+        'salah sandi',
+        'kata sandi salah',
+        'password salah',
+        'account or password is incorrect',
+        'akun atau kata sandi anda salah',
+        'is not recognized',
+        'tidak dikenali',
+        'tidak dapat menemukan akun',
+        'couldn\'t find an account',
       ];
 
       for (const frame of this.page.frames()) {
@@ -427,7 +439,7 @@ class TeamsBot {
       }
 
       const err = await this.checkForError();
-      if (err) throw new Error(err);
+      if (err) throw new Error(`LOGIN_FAILED: ${err}`);
 
       await this.handlePopups();
       await this.page.waitForTimeout(800);
@@ -1174,7 +1186,13 @@ class TeamsBot {
         userMsg =
           '❌ Step 22 Gagal: Akun tidak memiliki izin untuk mengakses organisasi Teams ini.';
       } else if (errMsg.includes('LOGIN_FAILED')) {
-        userMsg = '❌ Step 5 Gagal: Gagal login ke Dashboard. Admin Center tidak dapat diakses.';
+        if (errMsg.toLowerCase().includes('password') || errMsg.toLowerCase().includes('sandi')) {
+          userMsg = '❌ Login Gagal: Kata sandi salah. Silakan cek kembali password akun.';
+        } else if (errMsg.toLowerCase().includes('recognized') || errMsg.toLowerCase().includes('dikenali')) {
+          userMsg = '❌ Login Gagal: Akun tidak dikenali atau email salah.';
+        } else {
+          userMsg = '❌ Step 5 Gagal: Gagal login ke Dashboard. Admin Center tidak dapat diakses.';
+        }
       } else if (errMsg.includes('EMAIL_TRANSITION_FAILED')) {
         userMsg =
           '❌ Step 3 Gagal: Gagal lanjut ke pengisian password. Sistem mentok di pengisian email.';
