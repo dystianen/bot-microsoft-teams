@@ -14,6 +14,10 @@ class TeamsBot {
     this.accountConfig = accountConfig;
   }
 
+  _escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+  }
+
   async humanDelay(min = 500, max = 1500) {
     const delay = Math.floor(Math.random() * (max - min + 1) + min);
     await this.page.waitForTimeout(delay);
@@ -39,25 +43,26 @@ class TeamsBot {
           isDone = true;
         });
         if (isDone) break;
-
         const detectedError = await this.checkForError();
         if (detectedError) {
           errorMsg = detectedError;
-          isDone = true;
           break;
         }
       }
     };
 
-    const result = await Promise.race([promise, checkLoop()]).finally(() => {
+    try {
+      const [result] = await Promise.all([
+        promise.finally(() => {
+          isDone = true;
+        }),
+        checkLoop(),
+      ]);
+      if (errorMsg) throw new Error(`MICROSOFT_ERROR: ${errorMsg}`);
+      return result;
+    } finally {
       isDone = true;
-    });
-
-    if (errorMsg) {
-      throw new Error(`MICROSOFT_ERROR: ${errorMsg}`);
     }
-
-    return result;
   }
 
   async checkForError() {
@@ -148,8 +153,7 @@ class TeamsBot {
             if (!text || text.length >= 60) return false;
 
             return kws.some((kw) => {
-              const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
-              // Use word boundary to avoid partial matches like "no" in "notifications"
+              const escaped = this._escapeRegex(kw);
               return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
             });
           });
@@ -234,7 +238,7 @@ class TeamsBot {
               if (!isVisible) return false;
 
               const isMatch = kws.some((kw) => {
-                const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+                const escaped = this._escapeRegex(kw);
                 const regex = new RegExp(`\\b${escaped}\\b`, 'i');
                 return (
                   regex.test(textContent) ||
