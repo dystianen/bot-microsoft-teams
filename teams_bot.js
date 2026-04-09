@@ -73,16 +73,14 @@ class TeamsBot {
 
   async checkForError() {
     try {
-      // 1. Cek pesan error validasi di field
-      const fieldError = this.page
-        .locator('[data-automation-id="error-message"], [id*="error" i]')
-        .first();
-      if (await fieldError.isVisible().catch(() => false)) {
-        const msg = (await fieldError.textContent().catch(() => '')).trim();
-        if (msg) return `Field Error: ${msg}`;
-      }
+      const errorSelectors = [
+        '[data-automation-id="error-message"]',
+        '[id*="error" i]',
+        '.error',
+        '#passwordError',
+        '#usernameError',
+      ];
 
-      // 2. Cek teks di SEMUA frame (termasuk iframe tersembunyi)
       const markers = [
         'something went wrong',
         'something happened',
@@ -105,24 +103,33 @@ class TeamsBot {
         'is not recognized',
         'tidak dikenali',
         'tidak dapat menemukan akun',
-        'couldn\'t find an account',
+        "couldn't find an account",
       ];
 
       for (const frame of this.page.frames()) {
         try {
-          const frameText = await frame.textContent('body').catch(() => '');
-          const lowerFrameText = frameText.toLowerCase();
-          const found = markers.find((m) => lowerFrameText.includes(m.toLowerCase()));
-          if (found) {
-            return `Marker "${found}" detected in frame.`;
+          // 1. Cek selector error di tiap frame
+          for (const selector of errorSelectors) {
+            const el = frame.locator(selector).first();
+            if (await el.isVisible({ timeout: 500 }).catch(() => false)) {
+              const msg = (await el.innerText().catch(() => '')).trim();
+              if (msg) return `Field Error: ${msg}`;
+            }
           }
-        } catch (e) {
-          /* skip inaccessible frames */
-        }
+
+          // 2. Cek marker teks di tiap frame
+          const frameText = await frame
+            .locator('body')
+            .innerText()
+            .catch(() => '');
+          const lowerText = frameText.toLowerCase();
+          const found = markers.find((m) => lowerText.includes(m.toLowerCase()));
+          if (found) {
+            return `Marker "${found}" detected.`;
+          }
+        } catch (e) {}
       }
-    } catch (err) {
-      /* ignore */
-    }
+    } catch (err) {}
     return null;
   }
 
@@ -1188,7 +1195,10 @@ class TeamsBot {
       } else if (errMsg.includes('LOGIN_FAILED')) {
         if (errMsg.toLowerCase().includes('password') || errMsg.toLowerCase().includes('sandi')) {
           userMsg = '❌ Login Gagal: Kata sandi salah. Silakan cek kembali password akun.';
-        } else if (errMsg.toLowerCase().includes('recognized') || errMsg.toLowerCase().includes('dikenali')) {
+        } else if (
+          errMsg.toLowerCase().includes('recognized') ||
+          errMsg.toLowerCase().includes('dikenali')
+        ) {
           userMsg = '❌ Login Gagal: Akun tidak dikenali atau email salah.';
         } else {
           userMsg = '❌ Step 5 Gagal: Gagal login ke Dashboard. Admin Center tidak dapat diakses.';
