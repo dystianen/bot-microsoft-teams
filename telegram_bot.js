@@ -235,11 +235,11 @@ function initializeBotHandlers(bot) {
             const errMsg = (result.log || '').toLowerCase();
             const isRetryable =
               (errMsg.includes('something went wrong') ||
-                errMsg.includes('something happened') ||
-                errMsg.includes('timeout') ||
-                errMsg.includes('terjadi sesuatu') ||
+                errMsg.includes('terjadi kesalahan') ||
                 errMsg.includes('microsoft_error') ||
                 errMsg.includes('system_error')) &&
+              !errMsg.includes('something happened') &&
+              !errMsg.includes('terjadi sesuatu') &&
               !errMsg.includes('password') &&
               !errMsg.includes('sandi') &&
               !errMsg.includes('incorrect') &&
