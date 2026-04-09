@@ -159,59 +159,68 @@ class TeamsBot {
 
   async clickButtonWithPossibleNames(names) {
     await this.waitForSpinnerGone();
+    const keywords = names.map((n) => n.trim().toLowerCase());
 
-    // 1. Coba Playwright native dulu (lebih stabil)
-    for (const name of names) {
-      try {
-        const btn = this.page.getByRole('button', {
-          name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-        });
-        if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
-          await this.randomMouseMove();
-          await btn.click({ timeout: 5000 });
-          console.log(`[SUCCESS] Clicked: "${name}"`);
-          return true;
-        }
-      } catch (e) {
-        // lanjut ke nama berikutnya
-      }
-    }
-
-    // 2. Fallback ke JavaScript hanya jika native gagal semua
+    // 1. Coba klik di Main Page & Semua Frames menggunakan JS
     for (const frame of this.page.frames()) {
       try {
         const found = await frame.evaluate((kws) => {
-          const escapeRegex = (s) =>
-            s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
-
-          const candidates = Array.from(
-            document.querySelectorAll('button, [role="button"]')
-          ).filter((b) => b.offsetParent !== null);
-
+          const candidates = [
+            ...document.querySelectorAll(
+              'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]'
+            ),
+          ];
           const el = candidates.find((b) => {
-            const text = (b.textContent || b.value || b.getAttribute('aria-label') || '').trim();
-            return (
-              text.length > 0 &&
-              text.length < 60 &&
-              kws.some((kw) => new RegExp(`\\b${escapeRegex(kw)}\\b`, 'i').test(text))
-            );
+            const text = (b.textContent || b.value || b.getAttribute('aria-label') || '')
+              .trim()
+              .toLowerCase();
+
+            if (!text || text.length >= 60) return false;
+
+            return kws.some((kw) => {
+              const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+              // Use word boundary to avoid partial matches like "no" in "notifications"
+              return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+            });
           });
-
-          if (el) {
-            el.click();
-            return el.textContent?.trim() || 'button';
-          }
-          return null;
-        }, names);
-
+          if (!el) return null;
+          el.click();
+          return el.textContent?.trim() || el.value || 'unknown';
+        }, keywords);
         if (found) {
-          console.log(`[SUCCESS] Clicked via JS: "${found}"`);
+          console.log(
+            `[INFO] Clicked: "${found}" (in frame: ${frame.url() === this.page.url() ? 'main' : 'subframe'})`
+          );
           return true;
         }
       } catch (e) {}
     }
 
-    console.error(`[ERROR] Button not found: ${names.join(', ')}`);
+    // 2. Fallback: Playwright native click di Main Page & Semua Frames
+    console.log(`[INFO] Fallback to Playwright click for names: ${names.join(', ')}`);
+    const pattern = new RegExp(
+      names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*')).join('|'),
+      'i'
+    );
+
+    for (const frame of this.page.frames()) {
+      try {
+        const button = frame.getByRole('button', { name: pattern }).first();
+        if (await button.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await this.randomMouseMove();
+          const clickedText = await button
+            .evaluate((el) =>
+              (el.textContent || el.value || el.getAttribute('aria-label') || '').trim()
+            )
+            .catch(() => 'unknown');
+          await button.click({ timeout: 5000, force: true });
+          console.log(`[INFO] Clicked: "${clickedText || 'unknown'}" (native, in frame)`);
+          return true;
+        }
+      } catch (e) {}
+    }
+
+    console.error(`[ERROR] Button not found in any frame for names:`, names);
     throw new Error(`Button not found: ${names.join(', ')}`);
   }
 
@@ -408,7 +417,7 @@ class TeamsBot {
           continue; // Lanjutkan loop tanpa berhenti
         }
         // Jika error fatal lainnya, lempar error
-        throw new Error(`MICROSOFT_SYSTEM_ERROR: ${err}`);
+        throw new Error(`LOGIN_FAILED: ${err}`);
       }
 
       // 2. Cek apakah sudah sampai Dashboard?

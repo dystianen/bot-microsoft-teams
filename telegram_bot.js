@@ -234,12 +234,17 @@ function initializeBotHandlers(bot) {
             // Detect if the error is retryable (system-related)
             const errMsg = (result.log || '').toLowerCase();
             const isRetryable =
-              errMsg.includes('something went wrong') ||
-              errMsg.includes('something happened') ||
-              errMsg.includes('timeout') ||
-              errMsg.includes('terjadi sesuatu') ||
-              errMsg.includes('microsoft_error') ||
-              errMsg.includes('system_error');
+              (errMsg.includes('something went wrong') ||
+                errMsg.includes('something happened') ||
+                errMsg.includes('timeout') ||
+                errMsg.includes('terjadi sesuatu') ||
+                errMsg.includes('microsoft_error') ||
+                errMsg.includes('system_error')) &&
+              !errMsg.includes('password') &&
+              !errMsg.includes('sandi') &&
+              !errMsg.includes('incorrect') &&
+              !errMsg.includes('recognized') &&
+              !errMsg.includes('dikenali');
 
             if (!isRetryable || attempts >= maxAttempts) break;
 
