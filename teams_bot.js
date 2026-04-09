@@ -479,42 +479,31 @@ class TeamsBot {
         .catch(() => {});
       await this.page.waitForTimeout(800);
 
-      for (let attempt = 1; attempt <= 3; attempt++) {
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await this.waitForSpinnerGone(200);
 
-        let uncheckedSomething = true;
-        while (uncheckedSomething) {
-          uncheckedSomething = false;
-          const checked = await this.page.locator('input[type="checkbox"]:checked').all();
-          for (const cb of checked) {
-            await cb.click({ force: true }).catch(() => {});
-            uncheckedSomething = true;
-            await this.page.waitForTimeout(300);
-          }
+        const checkedBoxes = await this.page.locator('input[type="checkbox"]:checked').all();
+        if (checkedBoxes.length === 0) {
+          console.log('[SUCCESS] All licenses unchecked');
+          return;
         }
 
-        await this.page.waitForTimeout(800);
-        const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
+        console.log(`[INFO] Unchecking ${checkedBoxes.length} licenses (attempt ${attempt})`);
 
-        if (remaining === 0) {
-          await remoteLogger.logStep(
-            email,
-            10,
-            `✅ Semua lisensi dinonaktifkan (Percobaan ${attempt}).`
-          );
-          break;
-        } else {
-          await remoteLogger.logStep(
-            email,
-            10,
-            `⚠️ Percobaan ${attempt}: ${remaining} masih aktif. Retry...`
-          );
-          if (attempt === 3)
-            throw new Error(
-              `UNCHECK_ALL_FAILED: Still have ${remaining} checked after 3 attempts.`
-            );
-          await this.waitForSpinnerGone(500);
+        for (const checkbox of checkedBoxes) {
+          await checkbox.click({ force: true }).catch(() => {});
+          await this.page.waitForTimeout(200);
         }
+
+        await this.page.waitForTimeout(1000);
+      }
+
+      const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
+      if (remaining > 0) {
+        throw new Error(
+          `Failed to uncheck all: ${remaining} still checked after ${maxAttempts} attempts`
+        );
       }
     } catch (err) {
       await remoteLogger.logError(email, '❌ Tidak dapat menonaktifkan semua lisensi', err.message);
