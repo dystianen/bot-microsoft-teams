@@ -343,7 +343,7 @@ function initializeBotHandlers(bot) {
         if (queueResults.failed.length > 0) {
           summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
           queueResults.failed.forEach((r, i) => {
-            summaryMsg += `${i + 1}. ❌ <code>${escapeHTML(r.email)}</code>\n`;
+            summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
             summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || 'No log')}</i>\n`;
             summaryMsg += `────────────────\n`;
           });
@@ -533,9 +533,9 @@ function initializeBotHandlers(bot) {
       const options = {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '📞 Microsoft Copilot', callback_data: 'select_copilot' }],
-            [{ text: '📺 Microsoft Teams Rooms Basic', callback_data: 'select_teams' }],
-            [{ text: '💼 Business Apps (free)', callback_data: 'select_business_apps' }],
+            [{ text: 'Microsoft Copilot', callback_data: 'select_copilot' }],
+            [{ text: 'Microsoft Teams Rooms Basic', callback_data: 'select_teams' }],
+            [{ text: 'Business Apps (free)', callback_data: 'select_business_apps' }],
           ],
         },
       };
