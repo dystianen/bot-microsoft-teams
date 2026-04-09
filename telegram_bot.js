@@ -376,7 +376,7 @@ function initializeBotHandlers(bot) {
           queueResults.success.forEach((r, i) => {
             summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
           });
-          summaryMsg += `────────────────\n`;
+          summaryMsg += `\n`;
         }
 
         if (queueResults.failed.length > 0) {
