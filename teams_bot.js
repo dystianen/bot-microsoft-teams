@@ -345,7 +345,33 @@ class TeamsBot {
     await this.humanDelay(500, 1000);
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya']);
 
-    console.log('[STEP 3 VERIFY] Waiting for Password input...');
+    console.log('[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...');
+    const passwordOrPrompt = this.page.locator(
+      'input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya")'
+    );
+    await passwordOrPrompt
+      .first()
+      .waitFor({ state: 'visible', timeout: 15000 })
+      .catch(() => {
+        throw new Error(
+          'EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. Cek apakah email sudah benar atau ada error di halaman.'
+        );
+      });
+
+    console.log("[STEP 3.5] Checking for 'Choose a way to sign in' prompt...");
+    const usePasswordPrompt = this.page
+      .locator(
+        'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password"), div[role="button"][aria-label*="Gunakan kata sandi saya" i], div[role="button"]:has-text("Gunakan kata sandi saya")'
+      )
+      .first();
+    try {
+      await usePasswordPrompt.waitFor({ state: 'visible', timeout: 5000 });
+      console.log("[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...");
+      await usePasswordPrompt.click();
+      await this.humanDelay(400, 800);
+    } catch (e) {
+      console.log("[INFO] No 'Choose a way to sign in' prompt found, continuing...");
+    }
     await remoteLogger.logStep(email, 4, '🔑 Memasukkan password akun...');
     const passwordInput = this.page.locator('input[type="password"]').first();
     await this.waitForVisible(passwordInput);
