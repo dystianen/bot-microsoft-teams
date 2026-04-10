@@ -536,18 +536,66 @@ class TeamsBot {
     await this.handlePopups();
 
     await remoteLogger.logStep(email, 8, `🔍 Mencari akun pengguna: ${email}...`);
-    const searchInput = this.page.locator(SELECTORS.searchInput).first();
-    await this.waitForVisible(searchInput);
-    await searchInput.fill(email);
-    await this.page.keyboard.press('Enter');
-    await this.waitForSpinnerGone(2000);
 
-    const userRow = this.page.locator(SELECTORS.userRow).first();
-    await this.waitForVisible(userRow);
-    const nameFound = await userRow.textContent();
-    console.log(`[INFO] Clicking display name: "${nameFound?.trim()}" (Found for ${email})`);
-    await userRow.click();
-    await this.humanDelay(800, 1500);
+    let searchSuccess = false;
+    for (let searchAttempt = 1; searchAttempt <= 3; searchAttempt++) {
+      try {
+        const searchInput = this.page.locator(SELECTORS.searchInput).first();
+
+        // Wait for search input with a shorter timeout in each attempt
+        await this.waitForSpinnerGone();
+        const isVisible = await searchInput.isVisible({ timeout: 15000 }).catch(() => false);
+
+        if (!isVisible) {
+          console.warn(
+            `[RETRY] Search input not found (Attempt ${searchAttempt}/3). checking for errors...`
+          );
+          const pageErr = await this.checkForError();
+          if (pageErr) {
+            console.warn(`[RETRY] Detected page error: ${pageErr}. Reloading...`);
+            await this.page.reload({ waitUntil: 'domcontentloaded' });
+            await this.waitForSpinnerGone(2000);
+            await this.handlePopups();
+            continue;
+          }
+
+          if (searchAttempt < 3) {
+            console.warn(`[RETRY] Search input missing, retrying navigation...`);
+            await this.page.goto('https://admin.cloud.microsoft/?#/users', {
+              waitUntil: 'domcontentloaded',
+              timeout: HARD_TIMEOUT,
+            });
+            await this.waitForSpinnerGone(1000);
+            continue;
+          }
+
+          throw new Error(
+            'SEARCH_INPUT_NOT_FOUND: Search box tidak muncul di halaman Active Users.'
+          );
+        }
+
+        await searchInput.clear();
+        await searchInput.fill(email);
+        await this.page.keyboard.press('Enter');
+        await this.waitForSpinnerGone(2000);
+
+        const userRow = this.page.locator(SELECTORS.userRow).first();
+        await this.waitForVisible(userRow);
+        const nameFound = await userRow.textContent();
+        console.log(`[INFO] Clicking display name: "${nameFound?.trim()}" (Found for ${email})`);
+        await userRow.click();
+        await this.humanDelay(800, 1500);
+
+        searchSuccess = true;
+        break;
+      } catch (err) {
+        console.warn(`[WARN] Search attempt ${searchAttempt} failed: ${err.message}`);
+        if (searchAttempt === 3) throw err;
+        await this.page.waitForTimeout(3000);
+      }
+    }
+
+    if (!searchSuccess) throw new Error('SEARCH_ACCOUNT_FAILED: Gagal mencari user.');
 
     await remoteLogger.logStep(email, 9, "📋 Membuka tab 'Lisensi dan Aplikasi'...");
     const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
@@ -1399,7 +1447,6 @@ class TeamsBot {
       email,
       '🎉 Proses otomasi selesai dengan sukses! Semua langkah berhasil dijalankan.'
     );
-    return { success: true };
   }
 
   async run() {
