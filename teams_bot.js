@@ -157,70 +157,105 @@ class TeamsBot {
     await this.runWithMonitor(locator.waitFor({ state: 'visible', timeout: HARD_TIMEOUT }));
   }
 
-  async clickButtonWithPossibleNames(names) {
-    await this.waitForSpinnerGone();
+  async clickButtonWithPossibleNames(names, timeout = 20000) {
+    const startTime = Date.now();
     const keywords = names.map((n) => n.trim().toLowerCase());
 
-    // 1. Coba klik di Main Page & Semua Frames menggunakan JS
-    for (const frame of this.page.frames()) {
-      try {
-        const found = await frame.evaluate((kws) => {
-          const candidates = [
-            ...document.querySelectorAll(
-              'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"]'
-            ),
-          ];
-          const el = candidates.find((b) => {
-            const text = (b.textContent || b.value || b.getAttribute('aria-label') || '')
-              .trim()
-              .toLowerCase();
+    while (Date.now() - startTime < timeout) {
+      await this.waitForSpinnerGone();
 
-            if (!text || text.length >= 60) return false;
+      // 1. Coba klik di Main Page & Semua Frames menggunakan JavaScript Evaluation
+      for (const frame of this.page.frames()) {
+        try {
+          const found = await frame.evaluate((kws) => {
+            const candidates = [
+              ...document.querySelectorAll(
+                'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"], #idSIButton9'
+              ),
+            ];
+            const el = candidates.find((b) => {
+              const text = (b.textContent || b.value || b.getAttribute('aria-label') || '')
+                .trim()
+                .toLowerCase();
+              const id = (b.id || '').toLowerCase();
+              const isDisabled =
+                b.disabled ||
+                b.getAttribute('aria-disabled') === 'true' ||
+                b.classList.contains('disabled') ||
+                b.classList.contains('is-disabled');
 
-            return kws.some((kw) => {
-              const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
-              // Use word boundary to avoid partial matches like "no" in "notifications"
-              return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+              if (isDisabled) return false;
+
+              // Priority 1: Direct ID Match for Microsoft buttons
+              if (
+                id === 'idsibutton9' &&
+                kws.some((k) =>
+                  ['sign in', 'masuk', 'next', 'selanjutnya', 'berikutnya', 'yes', 'ya'].includes(k)
+                )
+              ) {
+                return true;
+              }
+
+              // Priority 2: Text Match
+              if (!text || text.length >= 60) return false;
+              return kws.some((kw) => {
+                const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+                return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+              });
             });
-          });
-          if (!el) return null;
-          el.click();
-          return el.textContent?.trim() || el.value || 'unknown';
-        }, keywords);
-        if (found) {
-          console.log(
-            `[INFO] Clicked: "${found}" (in frame: ${frame.url() === this.page.url() ? 'main' : 'subframe'})`
-          );
-          return true;
-        }
-      } catch (e) {}
-    }
+            if (!el) return null;
+            el.click();
+            return (el.textContent || el.value || el.id || 'button').trim();
+          }, keywords);
 
-    // 2. Fallback: Playwright native click di Main Page & Semua Frames
-    console.log(`[INFO] Fallback to Playwright click for names: ${names.join(', ')}`);
-    const pattern = new RegExp(
-      names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*')).join('|'),
-      'i'
-    );
+          if (found) {
+            console.log(`[INFO] Clicked: "${found}" (eval, in frame: ${frame.url()})`);
+            return true;
+          }
+        } catch (e) {}
+      }
 
-    for (const frame of this.page.frames()) {
-      try {
-        const button = frame.getByRole('button', { name: pattern }).first();
-        if (await button.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await this.randomMouseMove();
-          const clickedText = await button
-            .evaluate((el) =>
-              (el.textContent || el.value || el.getAttribute('aria-label') || '').trim()
+      // 2. Fallback: Playwright native click
+      const pattern = new RegExp(
+        names
+          .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*'))
+          .join('|'),
+        'i'
+      );
+
+      for (const frame of this.page.frames()) {
+        try {
+          // Special check for idSIButton9 via Playwright
+          if (
+            keywords.some((k) =>
+              ['sign in', 'masuk', 'next', 'selanjutnya', 'berikutnya', 'yes', 'ya'].includes(k)
             )
-            .catch(() => 'unknown');
-          await button.click({ timeout: 5000, force: true });
-          console.log(`[INFO] Clicked: "${clickedText || 'unknown'}" (native, in frame)`);
-          return true;
-        }
-      } catch (e) {}
+          ) {
+            const idBtn = frame.locator('#idSIButton9').first();
+            if (await idBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+              await idBtn.click({ force: true });
+              console.log('[INFO] Clicked: "#idSIButton9" (native)');
+              return true;
+            }
+          }
+
+          const button = frame.getByRole('button', { name: pattern }).first();
+          if (await button.isVisible({ timeout: 500 }).catch(() => false)) {
+            const clickedText = await button
+              .evaluate((el) => (el.textContent || el.value || '').trim())
+              .catch(() => 'unknown');
+            await this.randomMouseMove();
+            await button.click({ timeout: 5000, force: true });
+            console.log(`[INFO] Clicked: "${clickedText}" (native)`);
+            return true;
+          }
+        } catch (e) {}
+      }
+
+      await this.page.waitForTimeout(1000);
     }
 
-    console.error(`[ERROR] Button not found in any frame for names:`, names);
+    console.error(`[ERROR] Button not found after ${timeout}ms for names:`, names);
     throw new Error(`Button not found: ${names.join(', ')}`);
   }
 
@@ -1029,13 +1064,34 @@ class TeamsBot {
           /You don't have the required permissions to access this org|Anda tidak memiliki izin yang diperlukan untuk mengakses organisasi ini/i
         )
         .first();
+      const chatMarker = teamsPage
+        .locator(
+          '[data-tid="chat-list-view"], [data-tid="app-bar-navigation-list"], #teams-app-container, [data-test-id="chat-list"], .teams-app-canvas'
+        )
+        .first();
+      const teamsErrorMarker = teamsPage
+        .locator('text=/something went wrong|terjadi kesalahan/i')
+        .first();
 
-      console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, or Permission (60s)...');
+      console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, Chat, or Error (60s)...');
       await teamsSignInBtn
         .or(startTrialBtn)
         .or(pickAccountHeader)
         .or(permissionErrorLocator)
+        .or(chatMarker)
+        .or(teamsErrorMarker)
         .waitFor({ state: 'visible', timeout: 60000 });
+
+      if (await teamsErrorMarker.isVisible().catch(() => false)) {
+        throw new Error("Terdeteksi pesan error 'Something went wrong' di halaman Teams.");
+      }
+
+      if (await chatMarker.isVisible().catch(() => false)) {
+        console.log('[INFO] Detected already in Teams chat interface.');
+        throw new Error(
+          "ALREADY_IN_CHAT: Terdeteksi sudah masuk ke chat Teams. Tombol 'Mulai Uji Coba' tidak ditemukan, kemungkinan trial sudah aktif."
+        );
+      }
 
       if (await permissionErrorLocator.isVisible().catch(() => false)) {
         console.error('[ERROR] Permission error page detected.');
@@ -1065,8 +1121,15 @@ class TeamsBot {
         console.log("[INFO] 'Sign in' button detected, clicking...");
         await teamsSignInBtn.click();
         await teamsPage.waitForTimeout(1500);
-        console.log("[INFO] Waiting for 'Start Trial' button after Sign in...");
-        await startTrialBtn.waitFor({ state: 'visible', timeout: 45000 });
+        console.log("[INFO] Waiting for 'Start Trial' button or Chat after Sign in...");
+        await startTrialBtn.or(chatMarker).waitFor({ state: 'visible', timeout: 45000 });
+
+        if (await chatMarker.isVisible().catch(() => false)) {
+          console.log('[INFO] Entered Chat after Sign In.');
+          throw new Error(
+            'ALREADY_IN_CHAT: Berhasil Sign In namun langsung masuk ke chat (Trial mungkin sudah aktif).'
+          );
+        }
       }
 
       await remoteLogger.logStep(
@@ -1088,10 +1151,35 @@ class TeamsBot {
 
       await remoteLogger.logStep(email, 23.6, '✅ Aktivasi uji coba selesai. Menutup tab Teams...');
     } catch (err) {
-      // Jika error permission, lempar tanpa wrap agar bisa dibedakan
       if (err.message.startsWith('PERMISSION_ERROR')) throw err;
-      // Semua error lain di-wrap START_TRIAL_FAILED agar error mapping di run() bisa menangkap
-      throw new Error(`START_TRIAL_FAILED: ${err.message || 'Gagal aktivasi trial Teams.'}`);
+      if (err.message.startsWith('ALREADY_IN_CHAT')) throw err;
+
+      let cleanMsg = err.message || 'Gagal aktivasi trial Teams.';
+      if (cleanMsg.includes('Timeout') || cleanMsg.includes('waiting for')) {
+        const currentUrl = teamsPage.url();
+        cleanMsg = `Timeout: Teams macet atau tidak menampilkan tombol trial (URL: ${currentUrl})`;
+
+        try {
+          const bodyText = (await teamsPage.innerText('body').catch(() => '')).toLowerCase();
+          if (bodyText.includes('something went wrong') || bodyText.includes('terjadi kesalahan')) {
+            cleanMsg += " — Status: Microsoft Error 'Something went wrong'.";
+          } else if (bodyText.includes('pilih akun') || bodyText.includes('pick an account')) {
+            cleanMsg += ' — Status: Macet di halaman pilih akun.';
+          } else if (
+            bodyText.includes('checking your browser') ||
+            bodyText.includes('cloudflare')
+          ) {
+            cleanMsg += ' — Status: Terhalang verifikasi browser (DDoS protection).';
+          } else if (bodyText.length < 100) {
+            cleanMsg += ' — Status: Halaman kosong atau gagal muat.';
+          } else {
+            const snippet = bodyText.substring(0, 80).replace(/\n/g, ' ');
+            cleanMsg += ` — Teks halaman: "${snippet}..."`;
+          }
+        } catch (e) {}
+      }
+
+      throw new Error(`START_TRIAL_FAILED: ${cleanMsg}`);
     } finally {
       await teamsPage.close().catch(() => {});
     }
@@ -1284,9 +1372,10 @@ class TeamsBot {
       } else if (errMsg.includes('PLACE_ORDER_FAILED') || errMsg.includes('PLACE_ORDER_DISABLED')) {
         userMsg =
           "❌ Step 19 Gagal: Gagal saat menekan 'Buat Pesanan'. Microsoft mungkin menolak transaksi ini.";
+      } else if (errMsg.includes('ALREADY_IN_CHAT')) {
+        userMsg = '❌ Step 23 Gagal: Akun sudah aktif di Teams. Tombol aktivasi tidak muncul.';
       } else if (errMsg.includes('START_TRIAL_FAILED')) {
-        userMsg =
-          '❌ Step 23 Gagal: Gagal aktivasi trial Teams. Mungkin trial sudah pernah atau sedang aktif.';
+        userMsg = '❌ Step 23 Gagal: Gagal aktivasi trial Teams (Timeout atau Error Halaman).';
       } else if (errMsg.includes('PERMISSION_ERROR')) {
         userMsg =
           '❌ Step 22 Gagal: Akun tidak memiliki izin untuk mengakses organisasi Teams ini.';
