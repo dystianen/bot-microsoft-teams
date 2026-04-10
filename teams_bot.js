@@ -1205,14 +1205,14 @@ class TeamsBot {
     await remoteLogger.logStep(
       email,
       25,
-      `🔍 Mencari ulang pengguna: ${fullEmail} untuk pemulihan lisensi...`
+      `🔍 Mencari ulang pengguna: ${email} untuk pemulihan lisensi...`
     );
 
     const finalSearchInput = this.page
       .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
       .first();
     await this.waitForVisible(finalSearchInput);
-    await finalSearchInput.fill(fullEmail);
+    await finalSearchInput.fill(email);
     await this.page.keyboard.press('Enter');
 
     await this.waitForSpinnerGone(2000);
