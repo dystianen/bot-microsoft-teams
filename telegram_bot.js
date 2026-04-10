@@ -635,15 +635,26 @@ function initializeBotHandlers(bot) {
       for (const line of lines) {
         const parts = line.split('|').map((s) => s.trim());
         if (parts.length >= 2) {
-          session.accounts.push({
-            email: parts[0],
-            password: parts[parts.length - 1],
-          });
-          added++;
+          const email = parts[0];
+          const password = parts[parts.length - 1];
+          
+          // Check for duplicate email in current session
+          const isDuplicate = session.accounts.some(acc => acc.email.toLowerCase() === email.toLowerCase());
+          
+          if (!isDuplicate) {
+            session.accounts.push({
+              email: email,
+              password: password,
+            });
+            added++;
+          }
         }
       }
       if (added > 0) {
         bot.sendMessage(chatId, `Successfully added ${added} accounts.`, mainMenu);
+        session.step = 'IDLE';
+      } else if (lines.length > 0) {
+        bot.sendMessage(chatId, `No new accounts added (they might be duplicates or invalid format).`, mainMenu);
         session.step = 'IDLE';
       }
     } else if (session.step === 'SET_CONCURRENCY') {

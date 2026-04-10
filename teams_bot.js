@@ -1243,7 +1243,7 @@ class TeamsBot {
     await this.page.bringToFront();
 
     // Navigate back to Active Users
-    await this.page.goto('https://admin.microsoft.com/#/users', {
+    await this.page.goto('https://admin.cloud.microsoft/?#/users', {
       waitUntil: 'domcontentloaded',
       timeout: HARD_TIMEOUT,
     });
@@ -1256,23 +1256,66 @@ class TeamsBot {
       `🔍 Mencari ulang pengguna: ${email} untuk pemulihan lisensi...`
     );
 
-    const finalSearchInput = this.page
-      .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
-      .first();
-    await this.waitForVisible(finalSearchInput);
-    await finalSearchInput.fill(email);
-    await this.page.keyboard.press('Enter');
+    let restoreSearchSuccess = false;
+    for (let searchAttempt = 1; searchAttempt <= 3; searchAttempt++) {
+      try {
+        const finalSearchInput = this.page
+          .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
+          .first();
 
-    await this.waitForSpinnerGone(2000);
+        await this.waitForSpinnerGone();
+        const isVisible = await finalSearchInput.isVisible({ timeout: 15000 }).catch(() => false);
 
-    const finalUserRow = this.page
-      .locator(
-        'div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button'
-      )
-      .first();
-    await this.waitForVisible(finalUserRow);
-    await finalUserRow.click();
-    await this.humanDelay(2000, 3000);
+        if (!isVisible) {
+          console.warn(`[RETRY-RESTORE] Search input not found (Attempt ${searchAttempt}/3).`);
+          const pageErr = await this.checkForError();
+          if (pageErr) {
+            console.warn(`[RETRY-RESTORE] Detected error: ${pageErr}. Reloading...`);
+            await this.page.reload({ waitUntil: 'domcontentloaded' });
+            await this.waitForSpinnerGone(2000);
+            await this.handlePopups();
+            continue;
+          }
+
+          if (searchAttempt < 3) {
+            console.warn(`[RETRY-RESTORE] Search input missing, retrying navigation...`);
+            await this.page.goto('https://admin.cloud.microsoft/?#/users', {
+              waitUntil: 'domcontentloaded',
+              timeout: HARD_TIMEOUT,
+            });
+            await this.waitForSpinnerGone(1000);
+            continue;
+          }
+          throw new Error(
+            'RESTORE_SEARCH_INPUT_NOT_FOUND: Search box tidak muncul saat pemulihan.'
+          );
+        }
+
+        await finalSearchInput.clear();
+        await finalSearchInput.fill(email);
+        await this.page.keyboard.press('Enter');
+        await this.waitForSpinnerGone(2000);
+
+        const finalUserRow = this.page
+          .locator(
+            'div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button'
+          )
+          .first();
+        await this.waitForVisible(finalUserRow);
+        await finalUserRow.click();
+        await this.humanDelay(1500, 2500);
+
+        restoreSearchSuccess = true;
+        break;
+      } catch (err) {
+        console.warn(`[WARN] Restore search attempt ${searchAttempt} failed: ${err.message}`);
+        if (searchAttempt === 3) throw err;
+        await this.page.waitForTimeout(3000);
+      }
+    }
+
+    if (!restoreSearchSuccess)
+      throw new Error('RESTORE_SEARCH_FAILED: Gagal mencari user untuk pemulihan.');
 
     // 26. Licenses and apps
     await remoteLogger.logStep(
@@ -1442,11 +1485,6 @@ class TeamsBot {
     await this.waitForVisible(finalSaveBtn);
     await finalSaveBtn.click();
     await this.waitForSpinnerGone(5000);
-
-    await remoteLogger.logSuccess(
-      email,
-      '🎉 Proses otomasi selesai dengan sukses! Semua langkah berhasil dijalankan.'
-    );
   }
 
   async run() {
