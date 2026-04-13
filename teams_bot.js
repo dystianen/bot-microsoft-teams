@@ -104,6 +104,13 @@ class TeamsBot {
         'tidak dikenali',
         'tidak dapat menemukan akun',
         "couldn't find an account",
+        'Enter code',
+        'Masukkan kode',
+        'Enter the code displayed in the authenticator app',
+        'Masukkan kode yang ditampilkan di aplikasi pengautentikasi',
+        'Approve a request on my Microsoft Authenticator app',
+        'Verify your identity',
+        'Verifikasi identitas Anda',
       ];
 
       for (const frame of this.page.frames()) {
@@ -1531,6 +1538,12 @@ class TeamsBot {
           errMsg.toLowerCase().includes('dikenali')
         ) {
           userMsg = '❌ Login Gagal: Akun tidak dikenali atau email salah.';
+        } else if (
+          errMsg.toLowerCase().includes('code') ||
+          errMsg.toLowerCase().includes('kode') ||
+          errMsg.toLowerCase().includes('authenticator')
+        ) {
+          userMsg = '❌ Login Gagal: Muncul halaman untuk memasukan kode.';
         } else {
           userMsg = '❌ Step 5 Gagal: Gagal login ke Dashboard. Admin Center tidak dapat diakses.';
         }
