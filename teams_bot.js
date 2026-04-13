@@ -1501,10 +1501,7 @@ class TeamsBot {
       await this._activateTeamsTrial(email);
       await this._restorePrimaryLicense(email);
 
-      await remoteLogger.logSuccess(
-        email,
-        '🎉 Proses otomasi selesai dengan sukses! Semua langkah berhasil dijalankan.'
-      );
+      await remoteLogger.logSuccess(email, '🎉 Proses otomasi selesai!');
       return { success: true };
     } catch (error) {
       let userMsg = '❌ Otomasi gagal — proses dihentikan';
