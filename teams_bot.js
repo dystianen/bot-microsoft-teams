@@ -40,7 +40,7 @@ class TeamsBot {
     await this.page.mouse.move(x, y, { steps: 10 });
   }
 
-  async runWithMonitor(promise, timeout = HARD_TIMEOUT) {
+  async runWithMonitor(promise) {
     let isDone = false;
     let errorMsg = null;
 
