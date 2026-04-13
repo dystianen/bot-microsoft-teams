@@ -2,7 +2,7 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   deploy:
@@ -15,4 +15,4 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
-          script: powershell -Command "Set-Location 'C:\Users\Administrator\source\bot-microsoft-teams'; git fetch origin main; git reset --hard origin/main; npm install --omit=dev; pm2 restart ecosystem.config.js; pm2 save"
+          script: powershell -Command "Set-Location 'C:\Users\Administrator\source\bot-microsoft-teams'; git fetch origin main; git reset --hard origin/main; npm install --omit=dev; npm audit fix; pm2 restart ecosystem.config.js; pm2 save"
