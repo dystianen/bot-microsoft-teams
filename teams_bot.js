@@ -385,10 +385,10 @@ class TeamsBot {
 
     // --- CPU Saver: Resource Blocking (Network Interception) ---
     // Memblokir assets gambar, media, dan font. Dipertahankan stylesheet (CSS) karena dibutuhkan untuk selector layout.
-    await this.context.route("**/*", (route) => {
+    await this.context.route('**/*', (route) => {
       const type = route.request().resourceType();
-      if (["image", "media", "font"].includes(type)) {
-        route.abort("blockedbyclient");
+      if (['image', 'media', 'font'].includes(type)) {
+        route.abort('blockedbyclient');
       } else {
         route.continue();
       }
@@ -1010,7 +1010,7 @@ class TeamsBot {
               btn.getAttribute('aria-disabled') !== 'true' &&
               !btn.classList.contains('is-disabled'),
             await placeOrderBtn.elementHandle(),
-            { timeout: 30000 }
+            { timeout: HARD_TIMEOUT }
           );
           console.log("[INFO] 'Place order' is now enabled.");
         } catch (e) {
