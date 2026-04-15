@@ -37,7 +37,9 @@ class TeamsBot {
     const { width, height } = this.page.viewportSize() || { width: 1280, height: 720 };
     const x = Math.floor(Math.random() * width);
     const y = Math.floor(Math.random() * height);
-    await this.page.mouse.move(x, y, { steps: 10 });
+    // CPU Saver: Use fewer steps for movement
+    const steps = Math.floor(Math.random() * 3) + 2;
+    await this.page.mouse.move(x, y, { steps });
   }
 
   async runWithMonitor(promise) {
@@ -46,7 +48,8 @@ class TeamsBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        await this.page.waitForTimeout(1500).catch(() => {
+        // CPU Saver: Relaxing polling interval from 1500ms to 5000ms
+        await this.page.waitForTimeout(5000).catch(() => {
           isDone = true;
         });
         if (isDone) break;
@@ -379,6 +382,18 @@ class TeamsBot {
     }
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
+
+    // --- CPU Saver: Resource Blocking (Network Interception) ---
+    // Memblokir assets gambar, media, dan font. Dipertahankan stylesheet (CSS) karena dibutuhkan untuk selector layout.
+    await this.context.route('**/*', (route) => {
+      const type = route.request().resourceType();
+      if (['image', 'media', 'font'].includes(type)) {
+        route.abort('blockedbyclient');
+      } else {
+        route.continue();
+      }
+    });
+    // -------------------------------------------------------------
   }
 
   async _loginToAdminCenter(email, password) {
@@ -898,7 +913,7 @@ class TeamsBot {
 
           if (retry === 4) {
             throw new Error(
-              'BUY_BUTTON_NOT_FOUND: Opsi billing atau tombol Beli tidak aktif setelah >60 detik. Memicu reload...'
+              'BUY_BUTTON_NOT_FOUND: Opsi billing atau tombol Beli tidak aktif setelah >60 detik.'
             );
           }
           await this.page.waitForTimeout(15000);
@@ -995,12 +1010,12 @@ class TeamsBot {
               btn.getAttribute('aria-disabled') !== 'true' &&
               !btn.classList.contains('is-disabled'),
             await placeOrderBtn.elementHandle(),
-            { timeout: 30000 }
+            { timeout: HARD_TIMEOUT }
           );
           console.log("[INFO] 'Place order' is now enabled.");
         } catch (e) {
           throw new Error(
-            'PLACE_ORDER_DISABLED: Tombol tidak aktif dalam 30 detik. Kemungkinan otorisasi gagal.'
+            'PLACE_ORDER_DISABLED: Tombol tidak aktif dalam 90 detik. Otorisasi gagal.'
           );
         }
 
