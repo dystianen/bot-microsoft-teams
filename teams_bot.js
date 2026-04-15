@@ -913,7 +913,7 @@ class TeamsBot {
 
           if (retry === 4) {
             throw new Error(
-              'BUY_BUTTON_NOT_FOUND: Opsi billing atau tombol Beli tidak aktif setelah >60 detik. Memicu reload...'
+              'BUY_BUTTON_NOT_FOUND: Opsi billing atau tombol Beli tidak aktif setelah >60 detik.'
             );
           }
           await this.page.waitForTimeout(15000);
@@ -1015,7 +1015,7 @@ class TeamsBot {
           console.log("[INFO] 'Place order' is now enabled.");
         } catch (e) {
           throw new Error(
-            'PLACE_ORDER_DISABLED: Tombol tidak aktif dalam 30 detik. Kemungkinan otorisasi gagal.'
+            'PLACE_ORDER_DISABLED: Tombol tidak aktif dalam 90 detik. Otorisasi gagal.'
           );
         }
 
