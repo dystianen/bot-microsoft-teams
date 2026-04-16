@@ -2,7 +2,8 @@ const { chromium } = require('playwright-core');
 const config = require('./config');
 const remoteLogger = require('./remote_logger');
 
-const SPINNER_SELECTOR = '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i]';
+const SPINNER_SELECTOR =
+  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], :has-text("Loading subtotal"), :has-text("Tunggu sebentar"), :has-text("Mohon tunggu")';
 const HARD_TIMEOUT = 1.5 * 60 * 1000;
 
 const SELECTORS = {
@@ -835,6 +836,15 @@ class TeamsBot {
           console.log(`[STEP 16] Options attempt ${retry}/4...`);
           await this.waitForSpinnerGone(200);
 
+          // Cek apakah ada error sistem di tengah jalan
+          const pageErr = await this.checkForError();
+          if (pageErr) {
+            console.warn(`[RETRY] Terdeteksi error saat pilih opsi: ${pageErr}. Reloading...`);
+            await this.page.reload({ waitUntil: 'domcontentloaded' });
+            await this.page.waitForTimeout(5000);
+            continue;
+          }
+
           if (isCopilot) {
             const oneYear = this.page
               .locator(
@@ -842,6 +852,7 @@ class TeamsBot {
               )
               .first();
             if (await oneYear.isVisible({ timeout: 5000 }).catch(() => false)) {
+              await oneYear.scrollIntoViewIfNeeded().catch(() => {});
               await oneYear.click({ force: true }).catch(() => {});
               await this.page.waitForTimeout(1000);
             }
@@ -854,24 +865,19 @@ class TeamsBot {
               )
               .first();
             if (await oneMonth.isVisible({ timeout: 5000 }).catch(() => false)) {
+              await oneMonth.scrollIntoViewIfNeeded().catch(() => {});
               await oneMonth.click({ force: true }).catch(() => {});
               await this.page.waitForTimeout(500);
             }
-            const payMonthlyVisible = await this.page
-              .locator('label:has-text("Pay monthly"), label:has-text("Bayar bulanan")')
-              .first()
-              .isVisible({ timeout: 3000 })
-              .catch(() => false);
-            console.log(
-              `[INFO] Business Apps Free: pay monthly visible=${payMonthlyVisible} (auto-selected)`
-            );
           } else {
+            // Priority: Pay monthly / Bayar bulanan
             const payMonthly = this.page
               .locator(
                 'label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")'
               )
               .first();
             if (await payMonthly.isVisible({ timeout: 5000 }).catch(() => false)) {
+              await payMonthly.scrollIntoViewIfNeeded().catch(() => {});
               await payMonthly.click({ force: true }).catch(() => {});
               await this.page.waitForTimeout(1000);
             }
@@ -885,7 +891,6 @@ class TeamsBot {
               button:has-text("Buy"), button:has-text("Beli"),
               [role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"),
               a:has-text("Buy"), a:has-text("Beli"),
-              button:has-text("Get"), button:has-text("Dapatkan"),
               [role="button"]:has-text("Get"), [role="button"]:has-text("Dapatkan"),
               button:has-text("Checkout"), [role="button"]:has-text("Checkout"),
               button:has-text("Subscribe"), button:has-text("Berlangganan"),
@@ -910,6 +915,14 @@ class TeamsBot {
               console.log(`[SUCCESS] Buy button enabled at attempt ${retry}.`);
               buyBtn = buyBtnLocator;
               break;
+            } else {
+              console.warn(`[INFO] Buy button found but still DISABLED (Attempt ${retry}/4).`);
+              // Jika di attempt ke 3 masih macet, coba reload paksa
+              if (retry === 3) {
+                console.warn('[RETRY] Buy button stuck disabled, reloading page...');
+                await this.page.reload({ waitUntil: 'domcontentloaded' });
+                await this.page.waitForTimeout(5000);
+              }
             }
           }
 
@@ -918,7 +931,7 @@ class TeamsBot {
               'BUY_BUTTON_NOT_FOUND: Opsi billing atau tombol Beli tidak aktif setelah >60 detik.'
             );
           }
-          await this.page.waitForTimeout(15000);
+          await this.page.waitForTimeout(10000);
         }
 
         await remoteLogger.logStep(email, 17, "🛍️ Mengklik tombol 'Beli'...");
@@ -927,8 +940,15 @@ class TeamsBot {
         let clickedSuccessfully = false;
         for (let attempt = 1; attempt <= 3; attempt++) {
           const oldUrl = this.page.url();
-          await buyBtn.click({ timeout: 10000, force: true }).catch(() => {});
-          await this.page.waitForTimeout(1500);
+          // Coba klik normal dulu, kalau gagal di attempt 2 coba via JS evaluation
+          if (attempt < 2) {
+            await buyBtn.click({ timeout: 10000, force: true }).catch(() => {});
+          } else {
+            console.log(`[INFO] Attempt ${attempt}: Using JS click fallback...`);
+            await buyBtn.evaluate((el) => el.click()).catch(() => {});
+          }
+
+          await this.page.waitForTimeout(2500);
 
           const newUrl = this.page.url();
           const isBtnStillVisible = await buyBtn.isVisible().catch(() => false);
@@ -945,6 +965,10 @@ class TeamsBot {
             clickedSuccessfully = true;
             break;
           }
+
+          const errorMsg = await this.checkForError();
+          if (errorMsg) throw new Error(`BUY_CLICK_ERROR: ${errorMsg}`);
+
           console.warn(`[WARN] Buy click NOP, retrying (${attempt}/3)...`);
           await this.page.waitForTimeout(1000);
         }
