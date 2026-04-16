@@ -10,7 +10,7 @@ module.exports = {
       kill_timeout: 300000, // Wait up to 5 minutes to finish current task
       env: {
         NODE_ENV: 'production',
-        DISPLAY: ':1',
+        DISPLAY: ':20',
         XAUTHORITY: '/home/zulpanpratama/.Xauthority',
       },
     },
