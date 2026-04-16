@@ -370,12 +370,14 @@ class TeamsBot {
             ? this.accountConfig.headless
             : config.headless,
         args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
           '--incognito',
           '--disable-blink-features=AutomationControlled',
           '--disable-gpu',
           '--disable-dev-shm-usage',
-          '--disable-software-rasterizer',
           '--mute-audio',
+          '--window-position=0,0',
         ],
       });
       this.context = await this.browser.newContext();

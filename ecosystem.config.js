@@ -11,6 +11,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         DISPLAY: ':1',
+        XAUTHORITY: '/home/zulpanpratama/.Xauthority',
       },
     },
   ],
