@@ -1,6 +1,6 @@
 const { chromium } = require('playwright-core');
-const config = require('./config');
-const remoteLogger = require('./remote_logger');
+const config = require('../config');
+const remoteLogger = require('../utils/logger');
 
 const SPINNER_SELECTOR =
   '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], :has-text("Loading subtotal"), :has-text("Tunggu sebentar"), :has-text("Mohon tunggu")';

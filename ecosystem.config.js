@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'bot-microsoft-teams',
-      script: 'telegram_bot.js',
+      script: 'src/bots/TelegramBot.js',
       instances: 1,
       autorestart: true,
       watch: false,
@@ -10,8 +10,7 @@ module.exports = {
       kill_timeout: 300000, // Wait up to 5 minutes to finish current task
       env: {
         NODE_ENV: 'production',
-        DISPLAY: ':20',
-        XAUTHORITY: '/home/zulpanpratama/.Xauthority',
+        DISPLAY: ':22',
       },
     },
   ],

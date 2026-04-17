@@ -1,6 +1,6 @@
 const axios = require('axios');
 const os = require('os');
-const config = require('./config');
+const config = require('../config');
 
 class RemoteLogger {
   constructor() {

@@ -1,9 +1,9 @@
 const TelegramBot = require('node-telegram-bot-api');
-const config = require('./config');
-const { processSingleAccount } = require('./index');
-const connectDB = require('./db');
-const { AccountHistory, UserConfig } = require('./models');
-const remoteLogger = require('./remote_logger');
+const config = require('../config');
+const { processSingleAccount } = require('../index');
+const connectDB = require('../db/connection');
+const { AccountHistory, UserConfig } = require('../db/models');
+const remoteLogger = require('../utils/logger');
 
 // Global state for graceful shutdown
 let isShuttingDown = false;
@@ -637,10 +637,12 @@ function initializeBotHandlers(bot) {
         if (parts.length >= 2) {
           const email = parts[0];
           const password = parts[parts.length - 1];
-          
+
           // Check for duplicate email in current session
-          const isDuplicate = session.accounts.some(acc => acc.email.toLowerCase() === email.toLowerCase());
-          
+          const isDuplicate = session.accounts.some(
+            (acc) => acc.email.toLowerCase() === email.toLowerCase()
+          );
+
           if (!isDuplicate) {
             session.accounts.push({
               email: email,
@@ -654,7 +656,11 @@ function initializeBotHandlers(bot) {
         bot.sendMessage(chatId, `Successfully added ${added} accounts.`, mainMenu);
         session.step = 'IDLE';
       } else if (lines.length > 0) {
-        bot.sendMessage(chatId, `No new accounts added (they might be duplicates or invalid format).`, mainMenu);
+        bot.sendMessage(
+          chatId,
+          `No new accounts added (they might be duplicates or invalid format).`,
+          mainMenu
+        );
         session.step = 'IDLE';
       }
     } else if (session.step === 'SET_CONCURRENCY') {

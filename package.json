@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "bot": "nodemon telegram_bot.js"
+    "bot": "nodemon src/bots/TelegramBot.js"
   },
   "dependencies": {
     "axios": "^1.13.6",
