@@ -1,4 +1,4 @@
-const TeamsBot = require('./bots/TeamsBot');
+const TeamsBot = require('./bots/teams_bot');
 
 async function processSingleAccount(accountConfig, index, total) {
   console.log(

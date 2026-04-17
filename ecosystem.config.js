@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'bot-microsoft-teams',
-      script: 'src/bots/TelegramBot.js',
+      script: 'src/bots/telegram_bot.js',
       instances: 1,
       autorestart: true,
       watch: false,
