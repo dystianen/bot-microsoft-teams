@@ -976,7 +976,7 @@ class TeamsBot {
           const isBtnStillVisible = await buyBtn.isVisible().catch(() => false);
           const isNextStepVisible = await this.page
             .locator(
-              '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang"), .ms-Checkbox:has-text("autoriser les paiements récurrents"), button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan"), button:has-text("Passer la commande")'
+              '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang"), .ms-Checkbox:has-text("autoriser les paiements récurrents"), button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan"), button:has-text("Passer la commande"), button:has-text("Passer une commande")'
             )
             .first()
             .isVisible()
@@ -1045,7 +1045,7 @@ class TeamsBot {
         await remoteLogger.logStep(email, 19, "📦 Mengklik tombol 'Buat Pesanan'...");
         const placeOrderBtn = this.page
           .locator(
-            'button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan"), button:has-text("Passer la commande")'
+            'button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan"), button:has-text("Passer la commande"), button:has-text("Passer une commande")'
           )
           .first();
 
