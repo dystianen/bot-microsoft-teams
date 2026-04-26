@@ -236,14 +236,18 @@ function initializeBotHandlers(bot) {
             const isRetryable =
               (errMsg.includes('something went wrong') ||
                 errMsg.includes('terjadi kesalahan') ||
+                errMsg.includes('une erreur s\'est produite') ||
                 errMsg.includes('microsoft_error') ||
                 errMsg.includes('system_error')) &&
               !errMsg.includes('something happened') &&
               !errMsg.includes('terjadi sesuatu') &&
+              !errMsg.includes('quelque chose s\'est passé') &&
               !errMsg.includes('password') &&
               !errMsg.includes('sandi') &&
+              !errMsg.includes('mot de passe') &&
               !errMsg.includes('incorrect') &&
               !errMsg.includes('recognized') &&
+              !errMsg.includes('reconnu') &&
               !errMsg.includes('dikenali');
 
             if (!isRetryable || attempts >= maxAttempts) break;

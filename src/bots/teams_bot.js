@@ -3,7 +3,7 @@ const config = require('../config');
 const remoteLogger = require('../utils/logger');
 
 const SPINNER_SELECTOR =
-  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], :has-text("Loading subtotal"), :has-text("Tunggu sebentar"), :has-text("Mohon tunggu")';
+  '[data-testid="spinner"], .ms-Spinner, [class*="spinner" i], :has-text("Loading subtotal"), :has-text("Tunggu sebentar"), :has-text("Mohon tunggu"), :has-text("Attendez un instant"), :has-text("Veuillez patienter")';
 const HARD_TIMEOUT = 1.5 * 60 * 1000;
 
 const SELECTORS = {
@@ -11,9 +11,9 @@ const SELECTORS = {
   userRow:
     'div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button',
   licensesTab:
-    'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi")',
+    'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi"), button[role="tab"]:has-text("Licences et applications"), button:has-text("Licences et applications")',
   saveBtn:
-    'button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")',
+    'button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan"), button:has-text("Enregistrer les modifications")',
 };
 
 class TeamsBot {
@@ -91,30 +91,43 @@ class TeamsBot {
         'terjadi sesuatu',
         'Terjadi kesalahan',
         'Melindungi akun Anda',
+        'Une erreur s\'est produite',
+        'Quelque chose s\'est passé',
         'try a different way',
+        'essayer une autre méthode',
         'Protecting your account',
+        'Protection de votre compte',
         'Please solve the puzzle',
+        'Veuillez résoudre le puzzle',
         'error code',
         '715-123280',
         'incorrect password',
         'password incorrect',
+        'mot de passe incorrect',
         'sandi salah',
         'salah sandi',
         'kata sandi salah',
         'password salah',
         'account or password is incorrect',
         'akun atau kata sandi anda salah',
+        'Le compte ou le mot de passe est incorrect',
         'is not recognized',
+        'n\'est pas reconnu',
         'tidak dikenali',
         'tidak dapat menemukan akun',
+        'impossible de trouver un compte',
         "couldn't find an account",
         'Enter code',
         'Masukkan kode',
+        'Entrez le code',
         'Enter the code displayed in the authenticator app',
         'Masukkan kode yang ditampilkan di aplikasi pengautentikasi',
+        'Entrez le code affiché dans l\'application d\'authentification',
         'Approve a request on my Microsoft Authenticator app',
+        'Approuver une demande sur mon application Microsoft Authenticator',
         'Verify your identity',
         'Verifikasi identitas Anda',
+        'Vérifiez votre identité',
       ];
 
       for (const frame of this.page.frames()) {
@@ -201,7 +214,7 @@ class TeamsBot {
               if (
                 id === 'idsibutton9' &&
                 kws.some((k) =>
-                  ['sign in', 'masuk', 'next', 'selanjutnya', 'berikutnya', 'yes', 'ya'].includes(k)
+                  ['sign in', 'masuk', 'se connecter', 'next', 'selanjutnya', 'berikutnya', 'suivant', 'yes', 'ya', 'oui'].includes(k)
                 )
               ) {
                 return true;
@@ -239,7 +252,7 @@ class TeamsBot {
           // Special check for idSIButton9 via Playwright
           if (
             keywords.some((k) =>
-              ['sign in', 'masuk', 'next', 'selanjutnya', 'berikutnya', 'yes', 'ya'].includes(k)
+              ['sign in', 'masuk', 'se connecter', 'next', 'selanjutnya', 'berikutnya', 'suivant', 'yes', 'ya', 'oui'].includes(k)
             )
           ) {
             const idBtn = frame.locator('#idSIButton9').first();
@@ -281,6 +294,13 @@ class TeamsBot {
       'Tutup',
       'Lain kali',
       'Selesai',
+      'Fermer',
+      'Ignorer',
+      'Plus tard',
+      'Peut-être plus tard',
+      'J\'ai compris',
+      'Terminé',
+      'Non merci',
     ];
     const keywords = names.map((n) => n.trim().toLowerCase());
 
@@ -412,11 +432,11 @@ class TeamsBot {
     await this.waitForVisible(emailInput);
     await emailInput.fill(email);
     await this.humanDelay(500, 1000);
-    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya']);
+    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
 
     console.log('[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...');
     const passwordOrPrompt = this.page.locator(
-      'input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya")'
+      'input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"]:has-text("Utiliser mon mot de passe")'
     );
     await passwordOrPrompt
       .first()
@@ -430,7 +450,7 @@ class TeamsBot {
     console.log("[STEP 3.5] Checking for 'Choose a way to sign in' prompt...");
     const usePasswordPrompt = this.page
       .locator(
-        'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password"), div[role="button"][aria-label*="Gunakan kata sandi saya" i], div[role="button"]:has-text("Gunakan kata sandi saya")'
+        'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password"), div[role="button"][aria-label*="Gunakan kata sandi saya" i], div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"][aria-label*="Utiliser mon mot de passe" i], div[role="button"]:has-text("Utiliser mon mot de passe")'
       )
       .first();
     try {
@@ -446,7 +466,7 @@ class TeamsBot {
     await this.waitForVisible(passwordInput);
     await passwordInput.fill(password);
     await this.humanDelay(500, 1000);
-    await this.clickButtonWithPossibleNames(['Sign in', 'Masuk']);
+    await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
 
     await remoteLogger.logStep(
       email,
@@ -469,6 +489,7 @@ class TeamsBot {
           lowerErr.includes('went wrong') ||
           lowerErr.includes('happened') ||
           lowerErr.includes('terjadi sesuatu') ||
+          lowerErr.includes('une erreur s\'est produite') ||
           lowerErr.includes('terjadi kesalahan')
         ) {
           console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
@@ -495,7 +516,7 @@ class TeamsBot {
 
       const yesBtn = this.page
         .locator(
-          'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], #idSIButton9'
+          'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], button:has-text("Oui"), input[value="Oui"], #idSIButton9'
         )
         .first();
 
@@ -513,7 +534,7 @@ class TeamsBot {
       // 4. Cek rintangan: MFA Skip
       const skipBtn = this.page
         .locator(
-          'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton'
+          'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), a:has-text("Ignorer pour l\'instant"), button:has-text("Skip for now"), button:has-text("Ignorer pour l\'instant"), #idSecondaryButton'
         )
         .first();
       if (await skipBtn.isVisible().catch(() => false)) {
@@ -529,7 +550,7 @@ class TeamsBot {
 
       // 5. Cek rintangan: Use Password prompt
       const usePass = this.page
-        .locator('text=Use my password, text=Gunakan kata sandi saya, #allowInterrupt')
+        .locator('text=Use my password, text=Gunakan kata sandi saya, text=Utiliser mon mot de passe, #allowInterrupt')
         .first();
       if (await usePass.isVisible().catch(() => false)) {
         console.log("[INFO] Handling 'Use my password' prompt...");
@@ -650,6 +671,7 @@ class TeamsBot {
             pageErr &&
             (pageErr.toLowerCase().includes('went wrong') ||
               pageErr.toLowerCase().includes('kesalahan') ||
+              pageErr.toLowerCase().includes('une erreur s\'est produite') ||
               pageErr.toLowerCase().includes('happened'))
           ) {
             console.warn(`[RETRY] Terdeteksi "${pageErr}" saat uncheck. Reloading...`);
@@ -770,7 +792,7 @@ class TeamsBot {
 
         const unavailableMarker = this.page
           .locator(
-            'text="This product is unavailable", text="Produk ini tidak tersedia", text="You are not eligible", text="Anda tidak memenuhi syarat"'
+            'text="This product is unavailable", text="Produk ini tidak tersedia", text="Ce produit n\'est pas disponible", text="You are not eligible", text="Anda tidak memenuhi syarat", text="Vous n\'êtes pas éligible"'
           )
           .first();
         if (await unavailableMarker.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -784,7 +806,7 @@ class TeamsBot {
           console.log(`[STEP 15.5] Selecting plan: '${planName}'...`);
           const planDropdown = this.page
             .locator(
-              'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"], div:has-text("Pilih paket") select, [aria-label*="Pilih paket" i], div:has-text("Pilih paket") [role="combobox"]'
+              'div:has-text("Select a plan") select, [aria-label*="Select a plan" i], div:has-text("Select a plan") [role="combobox"], div:has-text("Pilih paket") select, [aria-label*="Pilih paket" i], div:has-text("Pilih paket") [role="combobox"], div:has-text("Sélectionner un plan") select, [aria-label*="Sélectionner un plan" i], div:has-text("Choisir un forfait") select, [aria-label*="Choisir un forfait" i]'
             )
             .first();
           await this.waitForVisible(planDropdown);
@@ -848,7 +870,7 @@ class TeamsBot {
           if (isCopilot) {
             const oneYear = this.page
               .locator(
-                'label:has-text("1 year"), label:has-text("1 tahun"), :text-is("1 year"), :text-is("1 tahun")'
+                'label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 an"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 an")'
               )
               .first();
             if (await oneYear.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -861,7 +883,7 @@ class TeamsBot {
           if (isBusinessAppsFree) {
             const oneMonth = this.page
               .locator(
-                'label:has-text("1 month"), label:has-text("1 bulan"), :text-is("1 month"), :text-is("1 bulan")'
+                'label:has-text("1 month"), label:has-text("1 bulan"), label:has-text("1 mois"), :text-is("1 month"), :text-is("1 bulan"), :text-is("1 mois")'
               )
               .first();
             if (await oneMonth.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -873,7 +895,7 @@ class TeamsBot {
             // Priority: Pay monthly / Bayar bulanan
             const payMonthly = this.page
               .locator(
-                'label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), :text-is("Pay monthly"), :text-is("Bayar bulanan")'
+                'label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), label:has-text("Payer mensuellement"), :text-is("Pay monthly"), :text-is("Bayar bulanan"), :text-is("Payer mensuellement")'
               )
               .first();
             if (await payMonthly.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -888,13 +910,13 @@ class TeamsBot {
           const buyBtnLocator = this.page
             .locator(
               `
-              button:has-text("Buy"), button:has-text("Beli"),
-              [role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"),
-              a:has-text("Buy"), a:has-text("Beli"),
-              [role="button"]:has-text("Get"), [role="button"]:has-text("Dapatkan"),
-              button:has-text("Checkout"), [role="button"]:has-text("Checkout"),
-              button:has-text("Subscribe"), button:has-text("Berlangganan"),
-              button:has-text("Try free"), button:has-text("Coba gratis")
+              button:has-text("Buy"), button:has-text("Beli"), button:has-text("Acheter"),
+              [role="button"]:has-text("Buy"), [role="button"]:has-text("Beli"), [role="button"]:has-text("Acheter"),
+              a:has-text("Buy"), a:has-text("Beli"), a:has-text("Acheter"),
+              [role="button"]:has-text("Get"), [role="button"]:has-text("Dapatkan"), [role="button"]:has-text("Obtenir"),
+              button:has-text("Checkout"), [role="button"]:has-text("Checkout"), button:has-text("Passer à la caisse"),
+              button:has-text("Subscribe"), button:has-text("Berlangganan"), button:has-text("S'abonner"),
+              button:has-text("Try free"), button:has-text("Coba gratis"), button:has-text("Essayer gratuitement")
             `
             )
             .first();
@@ -954,7 +976,7 @@ class TeamsBot {
           const isBtnStillVisible = await buyBtn.isVisible().catch(() => false);
           const isNextStepVisible = await this.page
             .locator(
-              '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang"), button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan")'
+              '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang"), .ms-Checkbox:has-text("autoriser les paiements récurrents"), button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan"), button:has-text("Passer la commande")'
             )
             .first()
             .isVisible()
@@ -979,7 +1001,7 @@ class TeamsBot {
         try {
           const checkboxContainer = this.page
             .locator(
-              '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang")'
+              '.ms-Checkbox:has-text("authorize recurring payments"), .ms-Checkbox:has-text("pembayaran berulang"), .ms-Checkbox:has-text("autoriser les paiements récurrents")'
             )
             .first();
           const isVisible = await checkboxContainer
@@ -1023,7 +1045,7 @@ class TeamsBot {
         await remoteLogger.logStep(email, 19, "📦 Mengklik tombol 'Buat Pesanan'...");
         const placeOrderBtn = this.page
           .locator(
-            'button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan")'
+            'button:has-text("Place order"), button:has-text("Buat pesanan"), button:has-text("Tempatkan pesanan"), button:has-text("Passer la commande")'
           )
           .first();
 
@@ -1063,8 +1085,11 @@ class TeamsBot {
               'confirmation',
               'thanks',
               'terima kasih',
+              'merci',
               'detail pesanan',
               'order details',
+              'détails de la commande',
+              'tout est prêt',
             ];
             const foundKeyword = successKeywords.find((kw) =>
               bodyContent.toLowerCase().includes(kw)
@@ -1142,22 +1167,22 @@ class TeamsBot {
 
       const teamsSignInBtn = teamsPage
         .locator(
-          'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk")'
+          'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk"), button:has-text("Se connecter"), a:has-text("Se connecter")'
         )
         .first();
       const startTrialBtn = teamsPage
         .locator(
-          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Try now"), a:has-text("Get started")'
+          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), button:has-text("Commencer l\'essai"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Commencer"), button:has-text("Démarrer"), button:has-text("Try now"), button:has-text("Essayer maintenant"), a:has-text("Get started")'
         )
         .first();
       const pickAccountHeader = teamsPage
         .locator(
-          'div:has-text("Pick an account"), div:has-text("Pilih akun"), h1:has-text("Pick an account"), h1:has-text("Pilih akun")'
+          'div:has-text("Pick an account"), div:has-text("Pilih akun"), div:has-text("Choisir un compte"), h1:has-text("Pick an account"), h1:has-text("Pilih akun"), h1:has-text("Choisir un compte")'
         )
         .first();
       const permissionErrorLocator = teamsPage
         .getByText(
-          /You don't have the required permissions to access this org|Anda tidak memiliki izin yang diperlukan untuk mengakses organisasi ini/i
+          /You don't have the required permissions to access this org|Anda tidak memiliki izin yang diperlukan untuk mengakses organisasi ini|Vous n'avez pas les autorisations requises pour accéder à cette organisation/i
         )
         .first();
       const chatMarker = teamsPage
@@ -1166,7 +1191,7 @@ class TeamsBot {
         )
         .first();
       const teamsErrorMarker = teamsPage
-        .locator('text=/something went wrong|terjadi kesalahan/i')
+        .locator('text=/something went wrong|terjadi kesalahan|une erreur s\'est produite/i')
         .first();
 
       console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, Chat, or Error (60s)...');
@@ -1257,9 +1282,9 @@ class TeamsBot {
 
         try {
           const bodyText = (await teamsPage.innerText('body').catch(() => '')).toLowerCase();
-          if (bodyText.includes('something went wrong') || bodyText.includes('terjadi kesalahan')) {
+          if (bodyText.includes('something went wrong') || bodyText.includes('terjadi kesalahan') || bodyText.includes('une erreur s\'est produite')) {
             cleanMsg += " — Status: Microsoft Error 'Something went wrong'.";
-          } else if (bodyText.includes('pilih akun') || bodyText.includes('pick an account')) {
+          } else if (bodyText.includes('pilih akun') || bodyText.includes('pick an account') || bodyText.includes('choisir un compte')) {
             cleanMsg += ' — Status: Macet di halaman pilih akun.';
           } else if (
             bodyText.includes('checking your browser') ||
@@ -1373,7 +1398,7 @@ class TeamsBot {
     );
     const finalLicensesTab = this.page
       .locator(
-        'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi")'
+        'button[role="tab"]:has-text("Licenses and apps"), button:has-text("Licenses and apps"), button[role="tab"]:has-text("Lisensi dan aplikasi"), button:has-text("Lisensi dan aplikasi"), button[role="tab"]:has-text("Licences et applications"), button:has-text("Licences et applications")'
       )
       .first();
     await this.waitForVisible(finalLicensesTab);
@@ -1527,7 +1552,7 @@ class TeamsBot {
     );
     const finalSaveBtn = this.page
       .locator(
-        'button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan")'
+        'button:has-text("Save changes"), button[id*="save" i], button:has-text("Simpan perubahan"), button:has-text("Enregistrer les modifications")'
       )
       .first();
     await this.waitForVisible(finalSaveBtn);
@@ -1572,11 +1597,12 @@ class TeamsBot {
         userMsg =
           '❌ Step 22 Gagal: Akun tidak memiliki izin untuk mengakses organisasi Teams ini.';
       } else if (errMsg.includes('LOGIN_FAILED')) {
-        if (errMsg.toLowerCase().includes('password') || errMsg.toLowerCase().includes('sandi')) {
+        if (errMsg.toLowerCase().includes('password') || errMsg.toLowerCase().includes('sandi') || errMsg.toLowerCase().includes('mot de passe')) {
           userMsg = '❌ Login Gagal: Kata sandi salah. Silakan cek kembali password akun.';
         } else if (
           errMsg.toLowerCase().includes('recognized') ||
-          errMsg.toLowerCase().includes('dikenali')
+          errMsg.toLowerCase().includes('dikenali') ||
+          errMsg.toLowerCase().includes('reconnu')
         ) {
           userMsg = '❌ Login Gagal: Akun tidak dikenali atau email salah.';
         } else if (
