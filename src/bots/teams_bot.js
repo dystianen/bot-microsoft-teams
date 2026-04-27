@@ -128,6 +128,13 @@ class TeamsBot {
         'Verify your identity',
         'Verifikasi identitas Anda',
         'Vérifiez votre identité',
+        // Order verification failed errors
+        'les vérifications de votre commande ont échoué',
+        'order checks have failed',
+        'pemeriksaan pesanan telah gagal',
+        'nous avons rencontré un problème',
+        'we encountered a problem',
+        'kami mengalami masalah',
       ];
 
       for (const frame of this.page.frames()) {
@@ -771,11 +778,13 @@ class TeamsBot {
         const isPhoneSystem = productUrl.includes('phone-system');
         const isCopilot = productUrl.includes('copilot');
         const isBusinessAppsFree = productUrl.includes('business-apps-free-');
+        const isLighthouse = productUrl.includes('microsoft-365-lighthouse');
 
         let planName = 'Microsoft 365 Copilot';
         if (isTeamsRooms) planName = 'Microsoft Teams Rooms Basic';
         else if (isPhoneSystem) planName = 'Microsoft 365 Phone System';
         else if (isBusinessAppsFree) planName = 'Business Apps (free)';
+        else if (isLighthouse) planName = 'Microsoft 365 Lighthouse';
 
         if (purchaseAttempt === 1 || this.page.url() !== productUrl) {
           await remoteLogger.logStep(email, 12, `🛒 Membuka Marketplace: ${planName}...`);
@@ -867,7 +876,8 @@ class TeamsBot {
             continue;
           }
 
-          if (isCopilot) {
+          if (isCopilot || isLighthouse) {
+            // Select 1-year subscription duration
             const oneYear = this.page
               .locator(
                 'label:has-text("1 year"), label:has-text("1 tahun"), label:has-text("1 an"), :text-is("1 year"), :text-is("1 tahun"), :text-is("1 an")'
@@ -877,6 +887,7 @@ class TeamsBot {
               await oneYear.scrollIntoViewIfNeeded().catch(() => {});
               await oneYear.click({ force: true }).catch(() => {});
               await this.page.waitForTimeout(1000);
+              console.log('[INFO] Selected 1-year subscription duration.');
             }
           }
 
@@ -892,7 +903,7 @@ class TeamsBot {
               await this.page.waitForTimeout(500);
             }
           } else {
-            // Priority: Pay monthly / Bayar bulanan
+            // Priority: Pay monthly / Bayar bulanan / Payer mensuellement
             const payMonthly = this.page
               .locator(
                 'label:has-text("Pay monthly"), label:has-text("Bayar bulanan"), label:has-text("Payer mensuellement"), :text-is("Pay monthly"), :text-is("Bayar bulanan"), :text-is("Payer mensuellement")'
@@ -902,6 +913,7 @@ class TeamsBot {
               await payMonthly.scrollIntoViewIfNeeded().catch(() => {});
               await payMonthly.click({ force: true }).catch(() => {});
               await this.page.waitForTimeout(1000);
+              console.log('[INFO] Selected Pay monthly billing frequency.');
             }
           }
 
@@ -1125,9 +1137,15 @@ class TeamsBot {
             lowerMsg.includes('went wrong') ||
             lowerMsg.includes('terjadi kesalahan') ||
             lowerMsg.includes('terjadi sesuatu') ||
-            lowerMsg.includes('buy_button_not_found'))
+            lowerMsg.includes('buy_button_not_found') ||
+            lowerMsg.includes('vérifications de votre commande ont échoué') ||
+            lowerMsg.includes('order checks have failed') ||
+            lowerMsg.includes('pemeriksaan pesanan telah gagal') ||
+            lowerMsg.includes('nous avons rencontré un problème') ||
+            lowerMsg.includes('we encountered a problem') ||
+            lowerMsg.includes('kami mengalami masalah'))
         ) {
-          console.warn(`[RETRY] Purchase failed. Attempt ${purchaseAttempt}/2. Reloading...`);
+          console.warn(`[RETRY] Purchase failed (order verification error). Attempt ${purchaseAttempt}/2. Reloading...`);
           await this.page.reload({ waitUntil: 'domcontentloaded' });
           await this.page.waitForTimeout(5000);
           continue;
@@ -1587,8 +1605,20 @@ class TeamsBot {
         userMsg =
           "❌ Step 17 Gagal: Tombol 'Beli' terkunci (abu-abu). Cek kelengkapan data penagihan atau apakah produk masih tersedia.";
       } else if (errMsg.includes('PLACE_ORDER_FAILED') || errMsg.includes('PLACE_ORDER_DISABLED')) {
-        userMsg =
-          "❌ Step 19 Gagal: Gagal saat menekan 'Buat Pesanan'. Microsoft mungkin menolak transaksi ini.";
+        if (
+          errMsg.toLowerCase().includes('vérifications de votre commande ont échoué') ||
+          errMsg.toLowerCase().includes('order checks have failed') ||
+          errMsg.toLowerCase().includes('pemeriksaan pesanan telah gagal') ||
+          errMsg.toLowerCase().includes('nous avons rencontré un problème') ||
+          errMsg.toLowerCase().includes('we encountered a problem') ||
+          errMsg.toLowerCase().includes('kami mengalami masalah')
+        ) {
+          userMsg =
+            "❌ Step 19 Gagal: Verifikasi pesanan ditolak Microsoft (Order Checks Failed). Coba lagi atau hubungi support Microsoft.";
+        } else {
+          userMsg =
+            "❌ Step 19 Gagal: Gagal saat menekan 'Buat Pesanan'. Microsoft mungkin menolak transaksi ini.";
+        }
       } else if (errMsg.includes('ALREADY_IN_CHAT')) {
         userMsg = '❌ Step 23 Gagal: Akun sudah aktif di Teams. Tombol aktivasi tidak muncul.';
       } else if (errMsg.includes('START_TRIAL_FAILED')) {
