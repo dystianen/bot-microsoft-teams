@@ -22,7 +22,28 @@ async function startBot() {
       process.exit(1);
     }
 
-    const bot = new TelegramBot(token, { polling: true });
+    const bot = new TelegramBot(token, {
+      polling: {
+        interval: 300,
+        autoStart: true,
+        params: {
+          timeout: 50,
+        },
+      },
+    });
+
+    // Listen for polling errors to avoid unhandled crashes and log them properly
+    bot.on('polling_error', (err) => {
+      if (err.code === 'EFATAL' || err.message.includes('ETIMEDOUT')) {
+        console.warn('[Telegram] Polling timeout detected. Bot will automatically retry...');
+      } else {
+        console.error('[Telegram] Polling Error:', err.code, err.message);
+      }
+    });
+
+    bot.on('error', (err) => {
+      console.error('[Telegram] General Error:', err);
+    });
 
     // Move the initialization of everything that depends on 'bot' inside
     initializeBotHandlers(bot);
