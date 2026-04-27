@@ -600,6 +600,7 @@ function initializeBotHandlers(bot) {
             [{ text: 'Microsoft Copilot', callback_data: 'select_copilot' }],
             [{ text: 'Microsoft Teams Rooms Basic', callback_data: 'select_teams' }],
             [{ text: 'Business Apps (free)', callback_data: 'select_business_apps' }],
+            [{ text: 'Microsoft 365 Lighthouse', callback_data: 'select_lighthouse' }],
           ],
         },
       };
@@ -641,6 +642,18 @@ function initializeBotHandlers(bot) {
         text: '💼 Business Apps Free Selected',
       });
       bot.sendMessage(chatId, '✅ <b>Product Set to:</b> Business Apps (free)', {
+        parse_mode: 'HTML',
+      });
+    } else if (data === 'select_lighthouse') {
+      const userConf = await getUserConfig(chatId);
+      userConf.microsoftUrl =
+        'https://admin.cloud.microsoft/?ocid=cmm45ut5ap0#/catalog/m/offer-details/microsoft-365-lighthouse/CFQ7TTC0JW0V';
+      userConf.updatedAt = new Date();
+      await userConf.save();
+      bot.answerCallbackQuery(callbackQuery.id, {
+        text: '🏠 Microsoft 365 Lighthouse Selected',
+      });
+      bot.sendMessage(chatId, '✅ <b>Product Set to:</b> Microsoft 365 Lighthouse', {
         parse_mode: 'HTML',
       });
     }
