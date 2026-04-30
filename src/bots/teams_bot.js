@@ -93,8 +93,8 @@ class TeamsBot {
         'terjadi sesuatu',
         'Terjadi kesalahan',
         'Melindungi akun Anda',
-        'Une erreur s\'est produite',
-        'Quelque chose s\'est passé',
+        "Une erreur s'est produite",
+        "Quelque chose s'est passé",
         'try a different way',
         'essayer une autre méthode',
         'Protecting your account',
@@ -114,7 +114,7 @@ class TeamsBot {
         'akun atau kata sandi anda salah',
         'Le compte ou le mot de passe est incorrect',
         'is not recognized',
-        'n\'est pas reconnu',
+        "n'est pas reconnu",
         'tidak dikenali',
         'tidak dapat menemukan akun',
         'impossible de trouver un compte',
@@ -124,7 +124,7 @@ class TeamsBot {
         'Entrez le code',
         'Enter the code displayed in the authenticator app',
         'Masukkan kode yang ditampilkan di aplikasi pengautentikasi',
-        'Entrez le code affiché dans l\'application d\'authentification',
+        "Entrez le code affiché dans l'application d'authentification",
         'Approve a request on my Microsoft Authenticator app',
         'Approuver une demande sur mon application Microsoft Authenticator',
         'Verify your identity',
@@ -223,7 +223,18 @@ class TeamsBot {
               if (
                 id === 'idsibutton9' &&
                 kws.some((k) =>
-                  ['sign in', 'masuk', 'se connecter', 'next', 'selanjutnya', 'berikutnya', 'suivant', 'yes', 'ya', 'oui'].includes(k)
+                  [
+                    'sign in',
+                    'masuk',
+                    'se connecter',
+                    'next',
+                    'selanjutnya',
+                    'berikutnya',
+                    'suivant',
+                    'yes',
+                    'ya',
+                    'oui',
+                  ].includes(k)
                 )
               ) {
                 return true;
@@ -261,7 +272,18 @@ class TeamsBot {
           // Special check for idSIButton9 via Playwright
           if (
             keywords.some((k) =>
-              ['sign in', 'masuk', 'se connecter', 'next', 'selanjutnya', 'berikutnya', 'suivant', 'yes', 'ya', 'oui'].includes(k)
+              [
+                'sign in',
+                'masuk',
+                'se connecter',
+                'next',
+                'selanjutnya',
+                'berikutnya',
+                'suivant',
+                'yes',
+                'ya',
+                'oui',
+              ].includes(k)
             )
           ) {
             const idBtn = frame.locator('#idSIButton9').first();
@@ -307,7 +329,7 @@ class TeamsBot {
       'Ignorer',
       'Plus tard',
       'Peut-être plus tard',
-      'J\'ai compris',
+      "J'ai compris",
       'Terminé',
       'Non merci',
     ];
@@ -498,7 +520,7 @@ class TeamsBot {
           lowerErr.includes('went wrong') ||
           lowerErr.includes('happened') ||
           lowerErr.includes('terjadi sesuatu') ||
-          lowerErr.includes('une erreur s\'est produite') ||
+          lowerErr.includes("une erreur s'est produite") ||
           lowerErr.includes('terjadi kesalahan')
         ) {
           console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
@@ -559,7 +581,9 @@ class TeamsBot {
 
       // 5. Cek rintangan: Use Password prompt
       const usePass = this.page
-        .locator('text=Use my password, text=Gunakan kata sandi saya, text=Utiliser mon mot de passe, #allowInterrupt')
+        .locator(
+          'text=Use my password, text=Gunakan kata sandi saya, text=Utiliser mon mot de passe, #allowInterrupt'
+        )
         .first();
       if (await usePass.isVisible().catch(() => false)) {
         console.log("[INFO] Handling 'Use my password' prompt...");
@@ -680,7 +704,7 @@ class TeamsBot {
             pageErr &&
             (pageErr.toLowerCase().includes('went wrong') ||
               pageErr.toLowerCase().includes('kesalahan') ||
-              pageErr.toLowerCase().includes('une erreur s\'est produite') ||
+              pageErr.toLowerCase().includes("une erreur s'est produite") ||
               pageErr.toLowerCase().includes('happened'))
           ) {
             console.warn(`[RETRY] Terdeteksi "${pageErr}" saat uncheck. Reloading...`);
@@ -813,7 +837,7 @@ class TeamsBot {
           throw new Error(`MARKETPLACE_ERROR: ${errorText}`);
         }
 
-        if (!isBusinessAppsFree) {
+        if (!isBusinessAppsFree && !isLighthouse) {
           console.log(`[STEP 15.5] Selecting plan: '${planName}'...`);
           const planDropdown = this.page
             .locator(
@@ -1147,7 +1171,9 @@ class TeamsBot {
             lowerMsg.includes('we encountered a problem') ||
             lowerMsg.includes('kami mengalami masalah'))
         ) {
-          console.warn(`[RETRY] Purchase failed (order verification error). Attempt ${purchaseAttempt}/2. Reloading...`);
+          console.warn(
+            `[RETRY] Purchase failed (order verification error). Attempt ${purchaseAttempt}/2. Reloading...`
+          );
           await this.page.reload({ waitUntil: 'domcontentloaded' });
           await this.page.waitForTimeout(5000);
           continue;
@@ -1326,7 +1352,11 @@ class TeamsBot {
             bodyText.includes('we\'ve run into an issue')
           ) {
             cleanMsg += " — Status: Microsoft Error 'Something went wrong'.";
-          } else if (bodyText.includes('pilih akun') || bodyText.includes('pick an account') || bodyText.includes('choisir un compte')) {
+          } else if (
+            bodyText.includes('pilih akun') ||
+            bodyText.includes('pick an account') ||
+            bodyText.includes('choisir un compte')
+          ) {
             cleanMsg += ' — Status: Macet di halaman pilih akun.';
           } else if (
             bodyText.includes('checking your browser') ||
@@ -1638,7 +1668,7 @@ class TeamsBot {
           errMsg.toLowerCase().includes('kami mengalami masalah')
         ) {
           userMsg =
-            "❌ Step 19 Gagal: Verifikasi pesanan ditolak Microsoft (Order Checks Failed). Coba lagi atau hubungi support Microsoft.";
+            '❌ Step 19 Gagal: Verifikasi pesanan ditolak Microsoft (Order Checks Failed). Coba lagi atau hubungi support Microsoft.';
         } else {
           userMsg =
             "❌ Step 19 Gagal: Gagal saat menekan 'Buat Pesanan'. Microsoft mungkin menolak transaksi ini.";
@@ -1651,7 +1681,11 @@ class TeamsBot {
         userMsg =
           '❌ Step 22 Gagal: Akun tidak memiliki izin untuk mengakses organisasi Teams ini.';
       } else if (errMsg.includes('LOGIN_FAILED')) {
-        if (errMsg.toLowerCase().includes('password') || errMsg.toLowerCase().includes('sandi') || errMsg.toLowerCase().includes('mot de passe')) {
+        if (
+          errMsg.toLowerCase().includes('password') ||
+          errMsg.toLowerCase().includes('sandi') ||
+          errMsg.toLowerCase().includes('mot de passe')
+        ) {
           userMsg = '❌ Login Gagal: Kata sandi salah. Silakan cek kembali password akun.';
         } else if (
           errMsg.toLowerCase().includes('recognized') ||
