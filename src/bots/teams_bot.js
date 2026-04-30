@@ -88,6 +88,8 @@ class TeamsBot {
       const markers = [
         'something went wrong',
         'something happened',
+        'run into an issue',
+        'we\'ve run into an issue',
         'terjadi sesuatu',
         'Terjadi kesalahan',
         'Melindungi akun Anda',
@@ -1209,20 +1211,36 @@ class TeamsBot {
         )
         .first();
       const teamsErrorMarker = teamsPage
-        .locator('text=/something went wrong|terjadi kesalahan|une erreur s\'est produite/i')
+        .locator(
+          'text=/something went wrong|terjadi kesalahan|une erreur s\'est produite|run into an issue|we\'ve run into an issue/i'
+        )
         .first();
 
       console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, Chat, or Error (60s)...');
-      await teamsSignInBtn
-        .or(startTrialBtn)
-        .or(pickAccountHeader)
-        .or(permissionErrorLocator)
-        .or(chatMarker)
-        .or(teamsErrorMarker)
-        .waitFor({ state: 'visible', timeout: 60000 });
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await teamsSignInBtn
+          .or(startTrialBtn)
+          .or(pickAccountHeader)
+          .or(permissionErrorLocator)
+          .or(chatMarker)
+          .or(teamsErrorMarker)
+          .waitFor({ state: 'visible', timeout: 60000 });
 
-      if (await teamsErrorMarker.isVisible().catch(() => false)) {
-        throw new Error("Terdeteksi pesan error 'Something went wrong' di halaman Teams.");
+        if (await teamsErrorMarker.isVisible().catch(() => false)) {
+          const retryBtn = teamsPage
+            .locator('button:has-text("Retry"), button:has-text("Coba lagi"), button:has-text("Réessayer")')
+            .first();
+          if (await retryBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            console.warn(
+              `[WARN] 'Something went wrong' detected. Clicking Retry (Attempt ${attempt}/3)...`
+            );
+            await retryBtn.click();
+            await teamsPage.waitForTimeout(5000);
+            continue;
+          }
+          throw new Error("Terdeteksi pesan error 'Something went wrong' di halaman Teams.");
+        }
+        break;
       }
 
       if (await chatMarker.isVisible().catch(() => false)) {
@@ -1300,7 +1318,13 @@ class TeamsBot {
 
         try {
           const bodyText = (await teamsPage.innerText('body').catch(() => '')).toLowerCase();
-          if (bodyText.includes('something went wrong') || bodyText.includes('terjadi kesalahan') || bodyText.includes('une erreur s\'est produite')) {
+          if (
+            bodyText.includes('something went wrong') ||
+            bodyText.includes('terjadi kesalahan') ||
+            bodyText.includes('une erreur s\'est produite') ||
+            bodyText.includes('run into an issue') ||
+            bodyText.includes('we\'ve run into an issue')
+          ) {
             cleanMsg += " — Status: Microsoft Error 'Something went wrong'.";
           } else if (bodyText.includes('pilih akun') || bodyText.includes('pick an account') || bodyText.includes('choisir un compte')) {
             cleanMsg += ' — Status: Macet di halaman pilih akun.';
