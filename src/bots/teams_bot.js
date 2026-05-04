@@ -34,6 +34,16 @@ class TeamsBot {
     await this.page.waitForTimeout(delay);
   }
 
+  async humanType(locator, text) {
+    if (!text) return;
+    await locator.click({ force: true }).catch(() => {});
+    await this.page.waitForTimeout(100);
+    await locator.fill('');
+    await locator.pressSequentially(text, {
+      delay: Math.floor(Math.random() * 60) + 30,
+    });
+  }
+
   async randomMouseMove() {
     const { width, height } = this.page.viewportSize() || { width: 1280, height: 720 };
     const x = Math.floor(Math.random() * width);
@@ -1242,7 +1252,7 @@ class TeamsBot {
 
     const pwdInput = this.page.locator('[data-automation-id="AddUserWizard_password"]').first();
     await this.waitForVisible(pwdInput);
-    await pwdInput.fill('Buyer_123');
+    await this.humanType(pwdInput, 'Buyer_123');
 
     // Uncheck "Require this user to change their password"
     const changePwdInput = this.page.locator('input#checkbox-502').first();
