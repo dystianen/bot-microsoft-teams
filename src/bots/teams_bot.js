@@ -1236,6 +1236,12 @@ class TeamsBot {
       .first();
     await userNameInput.fill('teams');
 
+    // Get the domain name from the dropdown to form the email
+    const domainSpan = this.page.locator('.ms-Dropdown-title').first();
+    const domainName = (await domainSpan.innerText().catch(() => 'onmicrosoft.com')).trim();
+    const createdEmail = `teams@${domainName}`;
+    console.log(`[INFO] Workaround email generated: ${createdEmail}`);
+
     // Uncheck "Automatically create a password"
     const autoPwdInput = this.page
       .locator('input#checkbox-493, [data-ktp-execute-target="true"]')
@@ -1293,10 +1299,7 @@ class TeamsBot {
     await finishBtn.click();
     await this.waitForSpinnerGone(200);
 
-    // 6. Save username and password
-    const reviewData = this.page.locator('.WizardReviewData-800 div').nth(1);
-    const createdEmail = (await reviewData.innerText().catch(() => 'teams@...')).trim();
-
+    // 6. Log result
     await remoteLogger.logStep(
       email,
       22.6,
