@@ -1257,7 +1257,7 @@ class TeamsBot {
     }
 
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
-    await this.waitForSpinnerGone(2000);
+    await this.waitForSpinnerGone(200);
 
     // 3. Product licenses
     await remoteLogger.logStep(email, 22.3, "📦 Memilih 'Buat pengguna tanpa lisensi'...");
@@ -1267,12 +1267,12 @@ class TeamsBot {
     await this.waitForVisible(noLicenseRadio);
     await noLicenseRadio.click({ force: true });
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
-    await this.waitForSpinnerGone(1000);
+    await this.waitForSpinnerGone(200);
 
     // 4. Optional settings
     await remoteLogger.logStep(email, 22.4, '⚙️ Melewati pengaturan opsional...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
-    await this.waitForSpinnerGone(1000);
+    await this.waitForSpinnerGone(200);
 
     // 5. Review and finish
     await remoteLogger.logStep(email, 22.5, '🏁 Menyelesaikan pembuatan user...');
@@ -1281,7 +1281,7 @@ class TeamsBot {
       .first();
     await this.waitForVisible(finishBtn);
     await finishBtn.click();
-    await this.waitForSpinnerGone(5000);
+    await this.waitForSpinnerGone(200);
 
     // 6. Save username and password
     const reviewData = this.page.locator('.WizardReviewData-800 div').nth(1);
@@ -1296,6 +1296,32 @@ class TeamsBot {
     // Close the panel
     await this.clickButtonWithPossibleNames(['Close', 'Tutup', 'Fermer']);
     await this.waitForSpinnerGone(1000);
+
+    // Sign out via UI as requested
+    await remoteLogger.logStep(email, 22.7, '🔄 Melakukan sign out admin untuk switch account...');
+    const profileBtn = this.page
+      .locator('#mectrl_main_trigger, #O365_MainLink_Me, #meInitialsButton, #mectrl_headerPicture')
+      .first();
+    if (await profileBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+      console.log('[INFO] Account manager button found, clicking...');
+      await profileBtn.click();
+      await this.humanDelay(1000, 2000);
+
+      const signOutBtn = this.page.locator('#mectrl_body_signOut').first();
+      if (await signOutBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+        console.log('[INFO] Sign out button found, clicking...');
+        await signOutBtn.click();
+        await this.page.waitForTimeout(5000);
+      } else {
+        console.warn('[WARN] Sign out button not visible via UI, using fallback logout URL.');
+        await this.page.goto('https://login.microsoftonline.com/logout.srf');
+        await this.page.waitForTimeout(5000);
+      }
+    } else {
+      console.warn('[WARN] Account manager button not found, using fallback logout URL.');
+      await this.page.goto('https://login.microsoftonline.com/logout.srf');
+      await this.page.waitForTimeout(5000);
+    }
 
     return { email: createdEmail, password: 'Buyer_123' };
   }
@@ -1431,41 +1457,14 @@ class TeamsBot {
           throw new Error('PERMISSION_ERROR: Akun workaround juga tidak memiliki izin.');
         }
 
-        console.warn('[ERROR] Permission error page detected. Triggering Add User Flow...');
+        console.warn(
+          '[ERROR] Permission error page detected. Closing Teams tab and triggering workaround...'
+        );
+        await teamsPage.close().catch(() => {});
+
         const newUser = await this._handleAddUserFlow(email);
 
-        await remoteLogger.logStep(
-          email,
-          22.7,
-          '🔄 Switching account to workaround user in Teams...'
-        );
-
-        // Sign out via UI as requested
-        await this.page.bringToFront();
-        const profilePic = this.page.locator('#mectrl_headerPicture').first();
-        if (await profilePic.isVisible({ timeout: 10000 }).catch(() => false)) {
-          console.log('[INFO] Profile pic found, clicking...');
-          await profilePic.click();
-          await this.humanDelay(1000, 2000);
-
-          const signOutBtn = this.page.locator('#mectrl_body_signOut').first();
-          if (await signOutBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-            console.log('[INFO] Sign out button found, clicking...');
-            await signOutBtn.click();
-            await this.page.waitForTimeout(5000);
-          } else {
-            console.warn('[WARN] Sign out button not visible, using fallback logout URL.');
-            await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
-            await teamsPage.waitForTimeout(5000);
-          }
-        } else {
-          console.warn('[WARN] Profile pic not found, using fallback logout URL.');
-          await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
-          await teamsPage.waitForTimeout(5000);
-        }
-
-        // Retry activation with new user
-        await teamsPage.close().catch(() => {});
+        // Retry activation with new user (Note: _handleAddUserFlow now handles sign-out)
         return await this._activateTeamsTrial(newUser.email, true);
       }
 
@@ -1539,42 +1538,13 @@ class TeamsBot {
               bodyText.includes("n'avez pas les autorisations requises"))
           ) {
             console.warn(
-              '[ERROR] Permission error detected in catch block fallback. Triggering Add User Flow...'
+              '[ERROR] Permission error detected in catch block fallback. Closing Teams tab and triggering workaround...'
             );
+            await teamsPage.close().catch(() => {});
+
             const newUser = await this._handleAddUserFlow(email);
 
-            await remoteLogger.logStep(
-              email,
-              22.7,
-              '🔄 Switching account to workaround user in Teams...'
-            );
-
-            // Sign out via UI as requested
-            await this.page.bringToFront();
-            const profilePic = this.page.locator('#mectrl_headerPicture').first();
-            if (await profilePic.isVisible({ timeout: 10000 }).catch(() => false)) {
-              console.log('[INFO] Profile pic found, clicking...');
-              await profilePic.click();
-              await this.humanDelay(1000, 2000);
-
-              const signOutBtn = this.page.locator('#mectrl_body_signOut').first();
-              if (await signOutBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-                console.log('[INFO] Sign out button found, clicking...');
-                await signOutBtn.click();
-                await this.page.waitForTimeout(5000);
-              } else {
-                console.warn('[WARN] Sign out button not visible, using fallback logout URL.');
-                await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
-                await teamsPage.waitForTimeout(5000);
-              }
-            } else {
-              console.warn('[WARN] Profile pic not found, using fallback logout URL.');
-              await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
-              await teamsPage.waitForTimeout(5000);
-            }
-
-            // Retry activation with new user
-            await teamsPage.close().catch(() => {});
+            // Retry activation with new user (Note: _handleAddUserFlow now handles sign-out)
             return await this._activateTeamsTrial(newUser.email, true);
           }
 
