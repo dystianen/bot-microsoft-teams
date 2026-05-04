@@ -1358,6 +1358,18 @@ class TeamsBot {
       const loginEmailInput = teamsPage
         .locator('input[type="email"], input[name="loginfmt"]')
         .first();
+      const useAnotherAccountBtn = teamsPage
+        .locator(
+          'div:has-text("Use another account"), #otherTile, [role="button"]:has-text("Use another account")'
+        )
+        .first();
+
+      if (await useAnotherAccountBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+        console.log("[INFO] 'Use another account' detected, clicking...");
+        await useAnotherAccountBtn.click();
+        await this.humanDelay(1000, 2000);
+      }
+
       if (await loginEmailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
         console.log(`[INFO] Logging in as: ${email}`);
         await loginEmailInput.fill(email);
