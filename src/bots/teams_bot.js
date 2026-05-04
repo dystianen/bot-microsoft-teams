@@ -89,7 +89,7 @@ class TeamsBot {
         'something went wrong',
         'something happened',
         'run into an issue',
-        'we\'ve run into an issue',
+        "we've run into an issue",
         'terjadi sesuatu',
         'Terjadi kesalahan',
         'Melindungi akun Anda',
@@ -1375,8 +1375,8 @@ class TeamsBot {
         )
         .first();
       const permissionErrorLocator = teamsPage
-        .getByText(
-          /You don't have the required permissions to access this org|Anda tidak memiliki izin yang diperlukan untuk mengakses organisasi ini|Vous n'avez pas les autorisations requises pour accéder à cette organisation/i
+        .locator(
+          'text=/permissions to access this org|izin yang diperlukan|autorisations requises/i'
         )
         .first();
       const chatMarker = teamsPage
@@ -1386,7 +1386,7 @@ class TeamsBot {
         .first();
       const teamsErrorMarker = teamsPage
         .locator(
-          'text=/something went wrong|terjadi kesalahan|une erreur s\'est produite|run into an issue|we\'ve run into an issue/i'
+          "text=/something went wrong|terjadi kesalahan|une erreur s'est produite|run into an issue|we've run into an issue/i"
         )
         .first();
 
@@ -1402,7 +1402,9 @@ class TeamsBot {
 
         if (await teamsErrorMarker.isVisible().catch(() => false)) {
           const retryBtn = teamsPage
-            .locator('button:has-text("Retry"), button:has-text("Coba lagi"), button:has-text("Réessayer")')
+            .locator(
+              'button:has-text("Retry"), button:has-text("Coba lagi"), button:has-text("Réessayer")'
+            )
             .first();
           if (await retryBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
             console.warn(
@@ -1528,12 +1530,60 @@ class TeamsBot {
 
         try {
           const bodyText = (await teamsPage.innerText('body').catch(() => '')).toLowerCase();
+
+          // FALLBACK: Check if we actually hit a permission error but locator failed
+          if (
+            !isWorkaround &&
+            (bodyText.includes("don't have the required permissions") ||
+              bodyText.includes('izin yang diperlukan') ||
+              bodyText.includes("n'avez pas les autorisations requises"))
+          ) {
+            console.warn(
+              '[ERROR] Permission error detected in catch block fallback. Triggering Add User Flow...'
+            );
+            const newUser = await this._handleAddUserFlow(email);
+
+            await remoteLogger.logStep(
+              email,
+              22.7,
+              '🔄 Switching account to workaround user in Teams...'
+            );
+
+            // Sign out via UI as requested
+            await this.page.bringToFront();
+            const profilePic = this.page.locator('#mectrl_headerPicture').first();
+            if (await profilePic.isVisible({ timeout: 10000 }).catch(() => false)) {
+              console.log('[INFO] Profile pic found, clicking...');
+              await profilePic.click();
+              await this.humanDelay(1000, 2000);
+
+              const signOutBtn = this.page.locator('#mectrl_body_signOut').first();
+              if (await signOutBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+                console.log('[INFO] Sign out button found, clicking...');
+                await signOutBtn.click();
+                await this.page.waitForTimeout(5000);
+              } else {
+                console.warn('[WARN] Sign out button not visible, using fallback logout URL.');
+                await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
+                await teamsPage.waitForTimeout(5000);
+              }
+            } else {
+              console.warn('[WARN] Profile pic not found, using fallback logout URL.');
+              await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
+              await teamsPage.waitForTimeout(5000);
+            }
+
+            // Retry activation with new user
+            await teamsPage.close().catch(() => {});
+            return await this._activateTeamsTrial(newUser.email, true);
+          }
+
           if (
             bodyText.includes('something went wrong') ||
             bodyText.includes('terjadi kesalahan') ||
-            bodyText.includes('une erreur s\'est produite') ||
+            bodyText.includes("une erreur s'est produite") ||
             bodyText.includes('run into an issue') ||
-            bodyText.includes('we\'ve run into an issue')
+            bodyText.includes("we've run into an issue")
           ) {
             cleanMsg += " — Status: Microsoft Error 'Something went wrong'.";
           } else if (
