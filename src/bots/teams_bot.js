@@ -1181,7 +1181,124 @@ class TeamsBot {
     }
   }
 
-  async _activateTeamsTrial(email) {
+  async _handleAddUserFlow(email) {
+    await remoteLogger.logStep(
+      email,
+      22.1,
+      "👤 Menambahkan user baru 'teams' karena masalah izin..."
+    );
+
+    await this.page.goto('https://admin.cloud.microsoft/?#/users', {
+      waitUntil: 'domcontentloaded',
+      timeout: HARD_TIMEOUT,
+    });
+    await this.waitForSpinnerGone(2000);
+    await this.handlePopups();
+
+    // 1. Click Add a user
+    const addUserBtn = this.page
+      .locator(
+        'button:has-text("Add a user"), button:has-text("Tambah pengguna"), button:has-text("Ajouter un utilisateur")'
+      )
+      .first();
+    await this.waitForVisible(addUserBtn);
+    await addUserBtn.click();
+    await this.waitForSpinnerGone(1000);
+
+    // 2. Fill Basics
+    await remoteLogger.logStep(email, 22.2, "📝 Mengisi informasi dasar user 'teams'...");
+    const firstNameInput = this.page
+      .locator('[data-automation-id="AddUserWizard_firstName"]')
+      .first();
+    await this.waitForVisible(firstNameInput);
+    await firstNameInput.fill('teams');
+
+    const displayNameInput = this.page
+      .locator('[data-automation-id="AddUserWizard_displayName"]')
+      .first();
+    await displayNameInput.click();
+    await this.humanDelay(500, 1000);
+
+    const userNameInput = this.page
+      .locator('[data-automation-id="AddUserWizard_userName"]')
+      .first();
+    await userNameInput.fill('teams');
+
+    // Uncheck "Automatically create a password"
+    const autoPwdInput = this.page
+      .locator('input#checkbox-493, [data-ktp-execute-target="true"]')
+      .first();
+    const autoPwdLabel = this.page
+      .locator(
+        'label:has-text("Automatically create a password"), label:has-text("Buat kata sandi secara otomatis")'
+      )
+      .first();
+    if ((await autoPwdInput.isVisible()) && (await autoPwdInput.isChecked())) {
+      await autoPwdLabel.click();
+      await this.humanDelay(300, 600);
+    }
+
+    const pwdInput = this.page.locator('[data-automation-id="AddUserWizard_password"]').first();
+    await this.waitForVisible(pwdInput);
+    await pwdInput.fill('Buyer_123');
+
+    // Uncheck "Require this user to change their password"
+    const changePwdInput = this.page.locator('input#checkbox-502').first();
+    const changePwdLabel = this.page
+      .locator(
+        'label:has-text("Require this user to change their password"), label:has-text("Wajibkan pengguna ini mengubah kata sandi")'
+      )
+      .first();
+    if ((await changePwdInput.isVisible()) && (await changePwdInput.isChecked())) {
+      await changePwdLabel.click();
+      await this.humanDelay(300, 600);
+    }
+
+    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
+    await this.waitForSpinnerGone(2000);
+
+    // 3. Product licenses
+    await remoteLogger.logStep(email, 22.3, "📦 Memilih 'Buat pengguna tanpa lisensi'...");
+    const noLicenseRadio = this.page
+      .locator('[data-automation-id="AddUserWithoutLicense"]')
+      .first();
+    await this.waitForVisible(noLicenseRadio);
+    await noLicenseRadio.click({ force: true });
+    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
+    await this.waitForSpinnerGone(1000);
+
+    // 4. Optional settings
+    await remoteLogger.logStep(email, 22.4, '⚙️ Melewati pengaturan opsional...');
+    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
+    await this.waitForSpinnerGone(1000);
+
+    // 5. Review and finish
+    await remoteLogger.logStep(email, 22.5, '🏁 Menyelesaikan pembuatan user...');
+    const finishBtn = this.page
+      .locator('button:has-text("Finish adding"), button:has-text("Selesai menambahkan")')
+      .first();
+    await this.waitForVisible(finishBtn);
+    await finishBtn.click();
+    await this.waitForSpinnerGone(5000);
+
+    // 6. Save username and password
+    const reviewData = this.page.locator('.WizardReviewData-800 div').nth(1);
+    const createdEmail = (await reviewData.innerText().catch(() => 'teams@...')).trim();
+
+    await remoteLogger.logStep(
+      email,
+      22.6,
+      `💾 User Workaround Berhasil Dibuat:\nEmail: ${createdEmail}\nPassword: Buyer_123`
+    );
+
+    // Close the panel
+    await this.clickButtonWithPossibleNames(['Close', 'Tutup', 'Fermer']);
+    await this.waitForSpinnerGone(1000);
+
+    return { email: createdEmail, password: 'Buyer_123' };
+  }
+
+  async _activateTeamsTrial(email, isWorkaround = false) {
     await remoteLogger.logStep(
       email,
       21,
@@ -1208,6 +1325,37 @@ class TeamsBot {
 
       await remoteLogger.logStep(email, 22, '⏳ Menunggu Teams siap (Sign in atau Start Trial)...');
       await teamsPage.waitForTimeout(2000);
+
+      // Check if we need to log in (happens if we just signed out for workaround)
+      const loginEmailInput = teamsPage
+        .locator('input[type="email"], input[name="loginfmt"]')
+        .first();
+      if (await loginEmailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        console.log(`[INFO] Logging in as: ${email}`);
+        await loginEmailInput.fill(email);
+        await teamsPage.keyboard.press('Enter');
+        await this.humanDelay(1500, 2500);
+
+        const pwdInput = teamsPage.locator('input[type="password"]').first();
+        await pwdInput.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+        if (await pwdInput.isVisible()) {
+          console.log('[INFO] Entering password...');
+          await pwdInput.fill(
+            isWorkaround ? 'Buyer_123' : this.accountConfig.microsoftAccount.password
+          );
+          await teamsPage.keyboard.press('Enter');
+          await this.humanDelay(1500, 2500);
+        }
+
+        // Handle "Stay signed in"
+        const yesBtn = teamsPage
+          .locator('button:has-text("Yes"), button:has-text("Ya"), #idSIButton9')
+          .first();
+        if (await yesBtn.isVisible({ timeout: 15000 }).catch(() => false)) {
+          await yesBtn.click();
+          await this.humanDelay(1000, 2000);
+        }
+      }
 
       const teamsSignInBtn = teamsPage
         .locator(
@@ -1259,10 +1407,46 @@ class TeamsBot {
       }
 
       if (await permissionErrorLocator.isVisible().catch(() => false)) {
-        console.error('[ERROR] Permission error page detected.');
-        throw new Error(
-          "PERMISSION_ERROR: Don't have the required permissions to access this org."
+        if (isWorkaround) {
+          throw new Error('PERMISSION_ERROR: Akun workaround juga tidak memiliki izin.');
+        }
+
+        console.warn('[ERROR] Permission error page detected. Triggering Add User Flow...');
+        const newUser = await this._handleAddUserFlow(email);
+
+        await remoteLogger.logStep(
+          email,
+          22.7,
+          '🔄 Switching account to workaround user in Teams...'
         );
+
+        // Sign out via UI as requested
+        await this.page.bringToFront();
+        const profilePic = this.page.locator('#mectrl_headerPicture').first();
+        if (await profilePic.isVisible({ timeout: 10000 }).catch(() => false)) {
+          console.log('[INFO] Profile pic found, clicking...');
+          await profilePic.click();
+          await this.humanDelay(1000, 2000);
+
+          const signOutBtn = this.page.locator('#mectrl_body_signOut').first();
+          if (await signOutBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+            console.log('[INFO] Sign out button found, clicking...');
+            await signOutBtn.click();
+            await this.page.waitForTimeout(5000);
+          } else {
+            console.warn('[WARN] Sign out button not visible, using fallback logout URL.');
+            await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
+            await teamsPage.waitForTimeout(5000);
+          }
+        } else {
+          console.warn('[WARN] Profile pic not found, using fallback logout URL.');
+          await teamsPage.goto('https://login.microsoftonline.com/logout.srf');
+          await teamsPage.waitForTimeout(5000);
+        }
+
+        // Retry activation with new user
+        await teamsPage.close().catch(() => {});
+        return await this._activateTeamsTrial(newUser.email, true);
       }
 
       if (await pickAccountHeader.isVisible().catch(() => false)) {
@@ -1366,6 +1550,13 @@ class TeamsBot {
       '↩️ Kembali ke Admin Center untuk memulihkan lisensi pengguna...'
     );
     await this.page.bringToFront();
+
+    // Check if we were signed out due to workaround flow
+    const loginMarker = this.page.locator('input[type="email"], input[name="loginfmt"]').first();
+    if (await loginMarker.isVisible({ timeout: 5000 }).catch(() => false)) {
+      console.log('[INFO] Admin session signed out, re-logging in...');
+      await this._loginToAdminCenter(email, this.accountConfig.microsoftAccount.password);
+    }
 
     // Navigate back to Active Users
     await this.page.goto('https://admin.cloud.microsoft/?#/users', {
