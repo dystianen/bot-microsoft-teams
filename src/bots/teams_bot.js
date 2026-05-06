@@ -1335,6 +1335,9 @@ class TeamsBot {
     await this.clickButtonWithPossibleNames(['Close', 'Tutup', 'Fermer']);
     await this.waitForSpinnerGone(1000);
 
+    // Restore license for primary user before switching to workaround user
+    await this._restorePrimaryLicense(email);
+
     // Sign out via UI as requested
     await remoteLogger.logStep(email, 22.7, '🔄 Melakukan sign out admin untuk switch account...');
     const profileBtn = this.page
