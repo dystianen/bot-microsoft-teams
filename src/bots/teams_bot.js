@@ -1452,20 +1452,12 @@ class TeamsBot {
           .waitFor({ state: 'visible', timeout: 60000 });
 
         if (await teamsErrorMarker.isVisible().catch(() => false)) {
-          const retryBtn = teamsPage
-            .locator(
-              'button:has-text("Retry"), button:has-text("Coba lagi"), button:has-text("Réessayer")'
-            )
-            .first();
-          if (await retryBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-            console.warn(
-              `[WARN] 'Something went wrong' detected. Clicking Retry (Attempt ${attempt}/3)...`
-            );
-            await retryBtn.click();
-            await teamsPage.waitForTimeout(5000);
-            continue;
-          }
-          throw new Error("Terdeteksi pesan error 'Something went wrong' di halaman Teams.");
+          console.warn(
+            `[WARN] 'Run into an issue' detected. Reloading page (Attempt ${attempt}/3)...`
+          );
+          await teamsPage.reload({ waitUntil: 'domcontentloaded' });
+          await teamsPage.waitForTimeout(8000);
+          continue;
         }
         break;
       }
