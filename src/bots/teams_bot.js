@@ -631,7 +631,6 @@ class TeamsBot {
       try {
         const searchInput = this.page.locator(SELECTORS.searchInput).first();
 
-        // Wait for search input with a shorter timeout in each attempt
         await this.waitForSpinnerGone();
         const isVisible = await searchInput.isVisible({ timeout: 15000 }).catch(() => false);
 
@@ -692,23 +691,23 @@ class TeamsBot {
     await licensesTab.click();
     await this.waitForSpinnerGone(500);
 
-    // 10. uncheck all checked checkboxes
+    // Step 10: uncheck all checked checkboxes
     await remoteLogger.logStep(email, 10, '🔲 Menonaktifkan semua lisensi yang sedang aktif...');
     try {
-      await this.waitForSpinnerGone(200); // Ensure no spinner blocks the initial state
+      await this.waitForSpinnerGone(200);
       const checkboxSelector = 'input[type="checkbox"]';
+
       await this.page
         .locator(checkboxSelector)
         .first()
         .waitFor({ state: 'visible', timeout: 15000 })
         .catch(() => {});
-      await this.page.waitForTimeout(800);
 
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           await this.waitForSpinnerGone(200);
 
-          // 1. Cek apakah ada error "Something went wrong" dari Microsoft
+          // Cek error "Something went wrong" dari Microsoft
           const pageErr = await this.checkForError();
           if (
             pageErr &&
@@ -722,10 +721,8 @@ class TeamsBot {
             await this.page.waitForTimeout(5000);
             await this.handlePopups();
 
-            // Setelah reload, kita harus pastikan panel user dan tab licenses terbuka lagi
-            const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
-            if (!(await licensesTab.isVisible().catch(() => false))) {
-              // Jika tertutup, cari ulang user (asumsi search input masih ada atau reload membersihkan state)
+            const freshLicensesTab = this.page.locator(SELECTORS.licensesTab).first();
+            if (!(await freshLicensesTab.isVisible().catch(() => false))) {
               const searchInput = this.page.locator(SELECTORS.searchInput).first();
               await this.waitForVisible(searchInput);
               await searchInput.fill(email);
@@ -734,23 +731,50 @@ class TeamsBot {
               await this.page.locator(SELECTORS.userRow).first().click();
               await this.humanDelay(800, 1500);
             }
-            await licensesTab.click();
+            await freshLicensesTab.click();
             await this.waitForSpinnerGone(500);
-            continue; // Ulangi attempt ini
+            continue;
           }
 
-          let changed = 0;
-          const checkboxes = await this.page.locator(checkboxSelector).all();
-          for (const cb of checkboxes) {
-            if (await cb.isChecked()) {
-              await cb.click({ force: true });
-              changed++;
-              await this.page.waitForTimeout(300);
+          // === OPTIMIZED UNCHECK ===
+          // Ambil semua checkbox yang checked sekaligus
+          const checkedBoxes = await this.page.locator('input[type="checkbox"]:checked').all();
+
+          if (checkedBoxes.length === 0) {
+            await remoteLogger.logStep(
+              email,
+              10,
+              `✅ Tidak ada lisensi aktif (Percobaan ke-${attempt}).`
+            );
+            break;
+          }
+
+          console.log(`[INFO] Found ${checkedBoxes.length} checked checkbox(es). Unchecking...`);
+
+          // Strategi: klik semua sekaligus via Promise.all
+          // Fallback ke sequential dengan delay minimal jika portal re-render DOM
+          try {
+            await Promise.all(checkedBoxes.map((cb) => cb.click({ force: true })));
+            await this.page.waitForTimeout(300); // single settle delay
+          } catch (parallelErr) {
+            console.warn(
+              `[WARN] Parallel uncheck failed (${parallelErr.message}), falling back to sequential...`
+            );
+            for (const cb of checkedBoxes) {
+              try {
+                if (await cb.isChecked().catch(() => false)) {
+                  await cb.click({ force: true });
+                  await this.page.waitForTimeout(80); // minimal delay
+                }
+              } catch (cbErr) {
+                console.warn(`[WARN] Skipping checkbox that errored: ${cbErr.message}`);
+              }
             }
+            await this.page.waitForTimeout(300);
           }
+          // === END OPTIMIZED UNCHECK ===
 
-          // Verification
-          await this.page.waitForTimeout(800);
+          // Verifikasi
           const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
 
           if (remaining === 0) {
@@ -764,12 +788,13 @@ class TeamsBot {
             await remoteLogger.logStep(
               email,
               10,
-              `⚠️ Percobaan ke-${attempt}: Masih ada ${remaining} lisensi yang aktif. Mencoba ulang...`
+              `⚠️ Percobaan ke-${attempt}: Masih ada ${remaining} lisensi aktif. Mencoba ulang...`
             );
-            if (attempt === 3)
+            if (attempt === 3) {
               throw new Error(
                 `UNCHECK_ALL_FAILED: Still have ${remaining} checkboxes checked after 3 attempts.`
               );
+            }
             await this.waitForSpinnerGone(500);
           }
         } catch (err) {
@@ -1600,7 +1625,6 @@ class TeamsBot {
   }
 
   async _restorePrimaryLicense(email) {
-    // 24. Balik lagi ke admin user (original tab)
     await remoteLogger.logStep(
       email,
       24,
@@ -1608,21 +1632,18 @@ class TeamsBot {
     );
     await this.page.bringToFront();
 
-    // Check if we were signed out due to workaround flow
     const loginMarker = this.page.locator('input[type="email"], input[name="loginfmt"]').first();
     if (await loginMarker.isVisible({ timeout: 5000 }).catch(() => false)) {
       console.log('[INFO] Admin session signed out, re-logging in...');
       await this._loginToAdminCenter(email, this.accountConfig.microsoftAccount.password);
     }
 
-    // Navigate back to Active Users
     await this.page.goto('https://admin.cloud.microsoft/?#/users', {
       waitUntil: 'domcontentloaded',
       timeout: HARD_TIMEOUT,
     });
     await this.waitForSpinnerGone(3000);
 
-    // 25. Search the same user again and select
     await remoteLogger.logStep(
       email,
       25,
@@ -1690,7 +1711,6 @@ class TeamsBot {
     if (!restoreSearchSuccess)
       throw new Error('RESTORE_SEARCH_FAILED: Gagal mencari user untuk pemulihan.');
 
-    // 26. Licenses and apps
     await remoteLogger.logStep(
       email,
       26,
@@ -1705,7 +1725,7 @@ class TeamsBot {
     await finalLicensesTab.click();
     await this.waitForSpinnerGone(2000);
 
-    // 27. Restore license - search by name from a prioritized list
+    // 27. Restore license
     const licenseNames = [
       'Microsoft 365 Business Standard',
       'Microsoft 365 Business Basic',
@@ -1726,69 +1746,60 @@ class TeamsBot {
     try {
       await this.waitForSpinnerGone(1000);
 
-      // Tunggu sampai minimal satu checkbox muncul
       await this.page
         .locator('input[type="checkbox"]')
         .first()
         .waitFor({ state: 'visible', timeout: 15000 })
         .catch(() => {});
 
-      // Debug: log semua lisensi yang tersedia di halaman
+      // Debug: log semua lisensi tersedia
       const allLicenseTexts = await this.page.locator('[data-automation-id^="LicenseText_"]').all();
-
       for (const el of allLicenseTexts) {
         const text = await el.innerText().catch(() => 'N/A');
         const automationId = await el.getAttribute('data-automation-id').catch(() => 'N/A');
-        await remoteLogger.logStep(
-          email,
-          27,
-          `🔎 Lisensi tersedia di halaman: "${text}" (${automationId})`
-        );
+        await remoteLogger.logStep(email, 27, `🔎 Lisensi tersedia: "${text}" (${automationId})`);
       }
 
-      // Find the first matching license checkbox by data-automation-id
-      let targetCheckbox = null;
-      let foundLicenseName = null;
+      // === OPTIMIZED: Cari semua lisensi secara paralel ===
+      const licenseSearchResults = await Promise.all(
+        licenseNames.map(async (licenseName) => {
+          const licenseTextEl = this.page
+            .locator(`[data-automation-id="LicenseText_${licenseName}"]`)
+            .first();
+          const isVisible = await licenseTextEl.isVisible({ timeout: 2000 }).catch(() => false);
+          if (!isVisible) return null;
 
-      for (const licenseName of licenseNames) {
-        // Cari elemen teks lisensi via data-automation-id yang spesifik
-        const licenseTextEl = this.page
-          .locator(`[data-automation-id="LicenseText_${licenseName}"]`)
-          .first();
+          const checkbox = licenseTextEl
+            .locator('xpath=ancestor::div[contains(@class,"ms-Checkbox")][1]')
+            .locator('input[type="checkbox"]');
+          const isCheckboxVisible = await checkbox.isVisible().catch(() => false);
+          if (!isCheckboxVisible) return null;
 
-        const isVisible = await licenseTextEl.isVisible({ timeout: 3000 }).catch(() => false);
+          return { licenseName, checkbox };
+        })
+      );
 
-        if (!isVisible) continue;
+      // Ambil hasil pertama yang valid (sesuai prioritas)
+      const found = licenseSearchResults.find((r) => r !== null);
+      // === END OPTIMIZED ===
 
-        // Naik ke ancestor .ms-Checkbox, lalu ambil input checkbox di dalamnya
-        const checkbox = licenseTextEl
-          .locator('xpath=ancestor::div[contains(@class,"ms-Checkbox")][1]')
-          .locator('input[type="checkbox"]');
-
-        const isCheckboxVisible = await checkbox.isVisible().catch(() => false);
-
-        if (isCheckboxVisible) {
-          targetCheckbox = checkbox;
-          foundLicenseName = licenseName;
-          await remoteLogger.logStep(
-            email,
-            27,
-            `✅ Lisensi ditemukan: '${licenseName}' — akan diaktifkan kembali.`
-          );
-          break;
-        }
-      }
-
-      if (!targetCheckbox) {
+      if (!found) {
         throw new Error(
-          `LICENSE_NOT_FOUND: None of the known licenses found in the checklist. Checked: ${licenseNames.join(', ')}`
+          `LICENSE_NOT_FOUND: None of the known licenses found. Checked: ${licenseNames.join(', ')}`
         );
       }
 
-      // Coba centang checkbox hingga 3 kali
+      const { licenseName: foundLicenseName, checkbox: targetCheckbox } = found;
+      await remoteLogger.logStep(
+        email,
+        27,
+        `✅ Lisensi ditemukan: '${foundLicenseName}' — akan diaktifkan kembali.`
+      );
+
+      // === OPTIMIZED: Centang dengan polling cepat, bukan fixed timeout ===
       let verifyChecked = false;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        await this.waitForSpinnerGone(500);
+        await this.waitForSpinnerGone(200); // turun dari 500ms
 
         const isChecked = await targetCheckbox.isChecked().catch(() => false);
 
@@ -1799,8 +1810,23 @@ class TeamsBot {
             `🖱️ Percobaan ke-${attempt}: Mengaktifkan centang lisensi '${foundLicenseName}'...`
           );
           await targetCheckbox.click({ force: true });
-          await this.page.waitForTimeout(1500);
+
+          // Polling sampai checked, max 2 detik (lebih cepat dari fixed 1500ms)
+          verifyChecked = await this.page
+            .waitForFunction(
+              (sel) => {
+                const el = document.querySelector(sel);
+                return el && el.checked;
+              },
+              `[data-automation-id="LicenseText_${foundLicenseName}"]` +
+                ' ~ input[type="checkbox"], ' +
+                `input[type="checkbox"]`,
+              { timeout: 2000 }
+            )
+            .then(() => true)
+            .catch(() => targetCheckbox.isChecked().catch(() => false));
         } else {
+          verifyChecked = true;
           await remoteLogger.logStep(
             email,
             27,
@@ -1808,31 +1834,29 @@ class TeamsBot {
           );
         }
 
-        // Verifikasi status centang
-        verifyChecked = await targetCheckbox.isChecked().catch(() => false);
-
         if (verifyChecked) {
           await remoteLogger.logStep(
             email,
             27,
-            `✅ Lisensi '${foundLicenseName}' berhasil diaktifkan kembali dan terverifikasi.`
+            `✅ Lisensi '${foundLicenseName}' berhasil diaktifkan dan terverifikasi.`
           );
           break;
         } else {
           await remoteLogger.logStep(
             email,
             27,
-            `⚠️ Percobaan ke-${attempt}: Lisensi masih belum tercentang. Mencoba ulang...`
+            `⚠️ Percobaan ke-${attempt}: Masih belum tercentang. Mencoba ulang...`
           );
-          await this.waitForSpinnerGone(1000);
+          await this.waitForSpinnerGone(500); // turun dari 1000ms
         }
 
         if (attempt === 3 && !verifyChecked) {
           throw new Error(
-            `STRICT_CHECKBOX_FAILED: Failed to check '${foundLicenseName}' license after 3 attempts.`
+            `STRICT_CHECKBOX_FAILED: Failed to check '${foundLicenseName}' after 3 attempts.`
           );
         }
       }
+      // === END OPTIMIZED ===
     } catch (err) {
       await remoteLogger.logError(
         email,
@@ -1844,7 +1868,6 @@ class TeamsBot {
 
     await this.humanDelay(1000, 2000);
 
-    // 28. Save changes
     await remoteLogger.logStep(
       email,
       28,
