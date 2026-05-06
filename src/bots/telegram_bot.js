@@ -222,6 +222,7 @@ function initializeBotHandlers(bot) {
       const originalTotal = accountsToProcess.length;
       const pendingPromises = new Set();
       const queueResults = {
+        all: [],
         success: [],
         failed: [],
       };
@@ -296,7 +297,15 @@ function initializeBotHandlers(bot) {
           await historyRecord.save().catch((e) => {});
 
           if (result.status === 'SUCCESS') {
-            queueResults.success.push({ email: accountData.email });
+            const resItem = {
+              email: accountData.email,
+              password: accountData.password,
+              status: 'SUCCESS',
+              finishedAt: new Date(),
+            };
+            queueResults.success.push(resItem);
+            queueResults.all.push(resItem);
+
             let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
             // Calculate WIB (UTC+7) manually and format without the 'true' flag
             const timeWib = new Date()
@@ -314,19 +323,31 @@ function initializeBotHandlers(bot) {
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: 'HTML' });
           } else {
-            queueResults.failed.push({
+            const resItem = {
               email: accountData.email,
+              password: accountData.password,
+              status: 'FAILED',
               log: result.log,
-            });
+              finishedAt: new Date(),
+            };
+            queueResults.failed.push(resItem);
+            queueResults.all.push(resItem);
+
             let message = `❌ <b>Failed [${currentIdx}/${originalTotal}] for ${escapeHTML(accountData.email)}</b>\n`;
             message += `Log: ${escapeHTML(result.log || 'Unknown error')}`;
             await safeSendMessage(chatId, message, { parse_mode: 'HTML' });
           }
         } catch (err) {
-          queueResults.failed.push({
+          const resItem = {
             email: accountData.email,
+            password: accountData.password,
+            status: 'FAILED',
             log: err.message,
-          });
+            finishedAt: new Date(),
+          };
+          queueResults.failed.push(resItem);
+          queueResults.all.push(resItem);
+
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
           const failRecord = new AccountHistory({
             email: accountData.email,
@@ -398,16 +419,47 @@ function initializeBotHandlers(bot) {
 
         if (queueResults.success.length > 0) {
           summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
-          queueResults.success.forEach((r, i) => {
-            summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
+          const items = [...queueResults.success].reverse();
+          items.forEach((r, i) => {
+            const timeStr = r.finishedAt.toLocaleString('en-GB', {
+              timeZone: 'Asia/Jakarta',
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            });
+            const [datePart, timePart] = timeStr.split(', ');
+            const [d, m] = datePart.split('/');
+            const shortTime = `${d}/${m}, ${timePart}`;
+
+            summaryMsg += `${i + 1}. ${shortTime}\n`;
+            summaryMsg += `- <code>${escapeHTML(r.email)}</code>\n`;
+            summaryMsg += `- <code>${escapeHTML(r.password)}</code>\n`;
+            summaryMsg += `────────────────\n`;
           });
           summaryMsg += `\n`;
         }
 
         if (queueResults.failed.length > 0) {
           summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
-          queueResults.failed.forEach((r, i) => {
-            summaryMsg += `${i + 1}. <code>${escapeHTML(r.email)}</code>\n`;
+          const items = [...queueResults.failed].reverse();
+          items.forEach((r, i) => {
+            const timeStr = r.finishedAt.toLocaleString('en-GB', {
+              timeZone: 'Asia/Jakarta',
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            });
+            const [datePart, timePart] = timeStr.split(', ');
+            const [d, m] = datePart.split('/');
+            const shortTime = `${d}/${m}, ${timePart}`;
+
+            summaryMsg += `${i + 1}. ${shortTime}\n`;
+            summaryMsg += `- <code>${escapeHTML(r.email)}</code>\n`;
+            summaryMsg += `- <code>${escapeHTML(r.password)}</code>\n`;
             summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || 'No log')}</i>\n`;
             summaryMsg += `────────────────\n`;
           });
@@ -466,17 +518,19 @@ function initializeBotHandlers(bot) {
       if (successRecords.length > 0) {
         message += '🟢 <b>SUCCESS LIST:</b>\n';
         successRecords.forEach((rec) => {
-          const timeStr = rec.createdAt
-            .toLocaleString('en-GB', {
-              timeZone: 'Asia/Jakarta',
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            })
-            .replace(/\//g, '/');
-          message += `${counter++}. <code>${timeStr}</code>\n`;
+          const timeStr = rec.createdAt.toLocaleString('en-GB', {
+            timeZone: 'Asia/Jakarta',
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+          const [datePart, timePart] = timeStr.split(', ');
+          const [d, m] = datePart.split('/');
+          const shortTime = `${d}/${m}, ${timePart}`;
+
+          message += `${counter++}. ${shortTime}\n`;
           message += `- <code>${escapeHTML(rec.email)}</code>\n`;
           message += `- <code>${escapeHTML(rec.password)}</code>\n`;
           message += '────────────────\n';
@@ -487,17 +541,19 @@ function initializeBotHandlers(bot) {
       if (failedRecords.length > 0) {
         message += '🔴 <b>FAILED LIST:</b>\n';
         failedRecords.forEach((rec) => {
-          const timeStr = rec.createdAt
-            .toLocaleString('en-GB', {
-              timeZone: 'Asia/Jakarta',
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            })
-            .replace(/\//g, '/');
-          message += `${counter++}. <code>${timeStr}</code>\n`;
+          const timeStr = rec.createdAt.toLocaleString('en-GB', {
+            timeZone: 'Asia/Jakarta',
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+          const [datePart, timePart] = timeStr.split(', ');
+          const [d, m] = datePart.split('/');
+          const shortTime = `${d}/${m}, ${timePart}`;
+
+          message += `${counter++}. ${shortTime}\n`;
           message += `- <code>${escapeHTML(rec.email)}</code>\n`;
           message += `- <code>${escapeHTML(rec.password)}</code>\n`;
           message += `⚠️ Log: ${escapeHTML(rec.log || 'No log')}\n`;
