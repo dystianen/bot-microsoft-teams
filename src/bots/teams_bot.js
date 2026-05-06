@@ -326,6 +326,35 @@ class TeamsBot {
 
   async handlePopups() {
     console.log('[INFO] Checking for any popups to dismiss...');
+
+    // === HANDLE CLOSE BUTTON (X) DI POJOK POPUP ===
+    // Prioritas utama: langsung close via X button tanpa perlu isi form/dropdown
+    try {
+      const closeXBtn = this.page
+        .locator(
+          'button[aria-label="Close"], button[aria-label="Fermer"], ' +
+            'button[aria-label="close"], button[aria-label="fermer"], ' +
+            'button[title="Close"], button[title="Fermer"], ' +
+            'button[title="Tutup"], button[aria-label="Tutup"], ' +
+            'button.close, [data-id="close-button"], ' +
+            'button[class*="close" i], button[class*="dismiss" i], ' +
+            'button:has([data-icon-name="Cancel"]), button:has([data-icon-name="ChromeClose"]), ' +
+            'button[aria-label*="ignor" i]'
+        )
+        .first();
+
+      if (await closeXBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        console.log('[INFO] Close (X) button detected on popup, clicking...');
+        await closeXBtn.click({ force: true });
+        await this.humanDelay(500, 800);
+        console.log('[INFO] Popup closed via X button.');
+        return;
+      }
+    } catch (e) {
+      console.log('[INFO] No close X button found:', e.message);
+    }
+    // === END CLOSE BUTTON ===
+
     const names = [
       'Close',
       'Dismiss',
@@ -342,6 +371,8 @@ class TeamsBot {
       "J'ai compris",
       'Terminé',
       'Non merci',
+      'Envoyer et ignorer',
+      'Send and ignore',
     ];
     const keywords = names.map((n) => n.trim().toLowerCase());
 
