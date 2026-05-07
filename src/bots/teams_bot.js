@@ -1626,8 +1626,6 @@ class TeamsBot {
             bodyText.includes('cloudflare')
           ) {
             cleanMsg += ' — Status: Terhalang verifikasi browser (DDoS protection).';
-          } else if (bodyText.length < 100) {
-            cleanMsg += ' — Status: Halaman kosong atau gagal muat.';
           } else {
             const snippet = bodyText.substring(0, 80).replace(/\n/g, ' ');
             cleanMsg += ` — Teks halaman: "${snippet}..."`;
