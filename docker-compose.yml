@@ -6,6 +6,12 @@ services:
     restart: always
     network_mode: host
     env_file: .env
+    environment:
+      - DISPLAY=:20
+      - XAUTHORITY=/root/.Xauthority
+    volumes:
+      - /home/zulpanpratama/.Xauthority:/root/.Xauthority:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix
     logging:
       driver: 'json-file'
       options:
