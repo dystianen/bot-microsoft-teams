@@ -458,19 +458,19 @@ class TeamsBot {
     } else {
       console.log('[STEP 1] Launching local browser in incognito mode...');
       this.browser = await chromium.launch({
+        executablePath: config.chromiumPath || undefined,
         headless:
           this.accountConfig?.headless !== undefined
-            ? this.accountConfig.headless
-            : config.headless,
+            ? !!this.accountConfig.headless
+            : !!config.headless,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--incognito',
           '--disable-blink-features=AutomationControlled',
-          '--disable-gpu',
           '--disable-dev-shm-usage',
           '--mute-audio',
-          '--window-position=0,0',
+          '--window-size=1280,720',
         ],
       });
       this.context = await this.browser.newContext();
