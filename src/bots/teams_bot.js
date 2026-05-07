@@ -467,7 +467,6 @@ class TeamsBot {
           '--disable-setuid-sandbox',
           '--incognito',
           '--disable-blink-features=AutomationControlled',
-          '--disable-gpu',
           '--disable-dev-shm-usage',
           '--mute-audio',
           '--start-maximized',
