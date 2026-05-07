@@ -258,12 +258,12 @@ function initializeBotHandlers(bot) {
             const isRetryable =
               (errMsg.includes('something went wrong') ||
                 errMsg.includes('terjadi kesalahan') ||
-                errMsg.includes('une erreur s\'est produite') ||
+                errMsg.includes("une erreur s'est produite") ||
                 errMsg.includes('microsoft_error') ||
                 errMsg.includes('system_error')) &&
               !errMsg.includes('something happened') &&
               !errMsg.includes('terjadi sesuatu') &&
-              !errMsg.includes('quelque chose s\'est passé') &&
+              !errMsg.includes("quelque chose s'est passé") &&
               !errMsg.includes('password') &&
               !errMsg.includes('sandi') &&
               !errMsg.includes('mot de passe') &&
@@ -406,7 +406,7 @@ function initializeBotHandlers(bot) {
         const processedCount = queueResults.success.length + queueResults.failed.length;
         let summaryMsg = session.forceStop
           ? `🛑 <b>Batch Queue Stopped Manually</b>\n`
-          : `🏁 <b>Batch Queue Finished</b>\n`;
+          : `🏁 <b>Batch Queue Finished - EXPLO</b>\n`;
 
         summaryMsg += `🔢 Total Queue: <code>${originalTotal}</code>\n`;
         summaryMsg += `✅ Success: <code>${queueResults.success.length}</code>\n`;
