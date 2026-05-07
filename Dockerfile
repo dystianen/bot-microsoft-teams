@@ -12,5 +12,8 @@ RUN bun install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# Install playwright browser + dependency linux
+RUN bunx playwright install --with-deps chromium
+
 # Jalankan bot menggunakan runtime Bun
 CMD ["bun", "run", "bot"]
