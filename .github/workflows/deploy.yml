@@ -1,15 +1,32 @@
-name: Deploy to VPS
+name: Deploy Bot Microsoft Teams
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH Deploy
-        uses: appleboy/ssh-action@v1.2.5
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/microsoft-teams-bot:latest
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
@@ -17,26 +34,5 @@ jobs:
           port: 2221
           script: |
             cd /home/${{ secrets.VPS_USERNAME }}/projects/bot-microsoft-teams
-
-            # 🔥 Load NVM (WAJIB)
-            export NVM_DIR="$HOME/.nvm"
-            source "$NVM_DIR/nvm.sh"
-
-            # 🔥 Pakai Node 24
-            nvm use 24
-
-            # Debug (optional tapi recommended)
-            node -v
-            npm -v
-            which node
-
-            git fetch origin main
-            git reset --hard origin/main
-
-            npm install --omit=dev
-
-            # Pastikan pm2 ada
-            command -v pm2 || npm install -g pm2
-
-            pm2 reload ecosystem.config.js
-            pm2 save
+            docker compose pull
+            docker compose up -d
