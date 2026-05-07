@@ -1,6 +1,6 @@
 services:
   teams-bot:
-    build: .
+    image: dystian/bot-microsoft-teams-teams-bot:latest
     shm_size: '2gb'
     container_name: microsoft-teams-bot
     restart: always

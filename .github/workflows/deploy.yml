@@ -35,4 +35,4 @@ jobs:
           script: |
             cd /home/${{ secrets.VPS_USERNAME }}/projects/bot-microsoft-teams
             docker compose pull
-            docker compose up -d
+            docker compose up -d --force-recreate --remove-orphans
