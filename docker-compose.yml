@@ -7,7 +7,7 @@ services:
     network_mode: host
     env_file: .env
     environment:
-      - DISPLAY=:20
+      - DISPLAY=:1
       - XAUTHORITY=/root/.Xauthority
     volumes:
       - /home/zulpanpratama/.Xauthority:/root/.Xauthority:ro
