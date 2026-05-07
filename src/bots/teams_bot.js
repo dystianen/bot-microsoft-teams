@@ -468,12 +468,16 @@ class TeamsBot {
           '--disable-setuid-sandbox',
           '--incognito',
           '--disable-blink-features=AutomationControlled',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
           '--disable-dev-shm-usage',
           '--mute-audio',
           '--window-size=1280,720',
         ],
       });
-      this.context = await this.browser.newContext();
+      this.context = await this.browser.newContext({
+        viewport: { width: 1280, height: 720 },
+      });
     }
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
