@@ -467,10 +467,9 @@ class TeamsBot {
           '--disable-setuid-sandbox',
           '--incognito',
           '--disable-blink-features=AutomationControlled',
-          '--disable-gpu',
           '--disable-dev-shm-usage',
           '--mute-audio',
-          '--window-position=0,0',
+          '--start-maximized',
         ],
       });
       this.context = await this.browser.newContext();
@@ -1479,6 +1478,11 @@ class TeamsBot {
           'button:has-text("Start trial"), button:has-text("Mulai uji coba"), button:has-text("Commencer l\'essai"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Commencer"), button:has-text("Démarrer"), button:has-text("Try now"), button:has-text("Essayer maintenant"), a:has-text("Get started")'
         )
         .first();
+      const pickAccountHeader = teamsPage
+        .locator(
+          'div:has-text("Pick an account"), div:has-text("Pilih akun"), div:has-text("Choisir un compte"), h1:has-text("Pick an account"), h1:has-text("Pilih akun"), h1:has-text("Choisir un compte")'
+        )
+        .first();
       const permissionErrorLocator = teamsPage
         .locator(
           'text=/permissions to access this org|izin yang diperlukan|autorisations requises/i'
@@ -1490,41 +1494,29 @@ class TeamsBot {
         )
         .first();
       const teamsErrorMarker = teamsPage
-        .locator("text=/something went wrong|terjadi kesalahan|une erreur s'est produite/i")
-        .first();
-      const retryTeams = teamsPage
-        .locator("text=/run into an issue|we've run into an issue/i")
+        .locator(
+          "text=/something went wrong|terjadi kesalahan|une erreur s'est produite|run into an issue|we've run into an issue/i"
+        )
         .first();
 
       console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, Chat, or Error (60s)...');
       for (let attempt = 1; attempt <= 3; attempt++) {
         await teamsSignInBtn
           .or(startTrialBtn)
+          .or(pickAccountHeader)
           .or(permissionErrorLocator)
           .or(chatMarker)
           .or(teamsErrorMarker)
-          .or(retryTeams)
           .waitFor({ state: 'visible', timeout: 60000 });
 
         if (await teamsErrorMarker.isVisible().catch(() => false)) {
-          throw new Error("Terdeteksi pesan error 'Something went wrong' di halaman Teams.");
-        }
-
-        if (await retryTeams.isVisible().catch(() => false)) {
           console.warn(
             `[WARN] 'Run into an issue' detected. Reloading page (Attempt ${attempt}/3)...`
           );
           await teamsPage.reload({ waitUntil: 'domcontentloaded' });
           await teamsPage.waitForTimeout(8000);
-
-          if (attempt === 3) {
-            throw new Error(
-              "START_TRIAL_FAILED: Teams terus error 'Run into an issue' setelah 3x reload."
-            );
-          }
           continue;
         }
-
         break;
       }
 
@@ -1546,7 +1538,26 @@ class TeamsBot {
         await teamsPage.close().catch(() => {});
 
         const newUser = await this._handleAddUserFlow(email);
+
+        // Retry activation with new user (Note: _handleAddUserFlow now handles sign-out)
         return await this._activateTeamsTrial(newUser.email, true);
+      }
+
+      if (await pickAccountHeader.isVisible().catch(() => false)) {
+        console.log("[INFO] 'Pick an account' detected, selecting current user...");
+        const targetAccountItem = teamsPage
+          .locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`)
+          .first();
+        if (await targetAccountItem.isVisible().catch(() => false)) {
+          await targetAccountItem.click();
+        } else {
+          await teamsPage
+            .locator('div[role="listitem"], .tile-container')
+            .first()
+            .click()
+            .catch(() => {});
+        }
+        await teamsPage.waitForTimeout(2000);
       }
 
       if (await teamsSignInBtn.isVisible().catch(() => false)) {
@@ -1594,6 +1605,7 @@ class TeamsBot {
         try {
           const bodyText = (await teamsPage.innerText('body').catch(() => '')).toLowerCase();
 
+          // FALLBACK: Check if we actually hit a permission error but locator failed
           if (
             !isWorkaround &&
             (bodyText.includes("don't have the required permissions") ||
@@ -1606,13 +1618,17 @@ class TeamsBot {
             await teamsPage.close().catch(() => {});
 
             const newUser = await this._handleAddUserFlow(email);
+
+            // Retry activation with new user (Note: _handleAddUserFlow now handles sign-out)
             return await this._activateTeamsTrial(newUser.email, true);
           }
 
           if (
             bodyText.includes('something went wrong') ||
             bodyText.includes('terjadi kesalahan') ||
-            bodyText.includes("une erreur s'est produite")
+            bodyText.includes("une erreur s'est produite") ||
+            bodyText.includes('run into an issue') ||
+            bodyText.includes("we've run into an issue")
           ) {
             cleanMsg += " — Status: Microsoft Error 'Something went wrong'.";
           } else if (
@@ -1626,6 +1642,8 @@ class TeamsBot {
             bodyText.includes('cloudflare')
           ) {
             cleanMsg += ' — Status: Terhalang verifikasi browser (DDoS protection).';
+          } else if (bodyText.length < 100) {
+            cleanMsg += ' — Status: Halaman kosong atau gagal muat.';
           } else {
             const snippet = bodyText.substring(0, 80).replace(/\n/g, ' ');
             cleanMsg += ` — Teks halaman: "${snippet}..."`;
