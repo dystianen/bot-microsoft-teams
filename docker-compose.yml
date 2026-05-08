@@ -2,6 +2,7 @@ services:
   teams-bot:
     image: dystian/microsoft-teams-bot:latest
     container_name: microsoft-teams-bot
+    env_file: .env
 
     network_mode: host
     ipc: host
