@@ -470,6 +470,9 @@ class TeamsBot {
           '--disable-dev-shm-usage',
           '--mute-audio',
           '--start-maximized',
+          '--window-position=0,0',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
         ],
       });
       this.context = await this.browser.newContext();
