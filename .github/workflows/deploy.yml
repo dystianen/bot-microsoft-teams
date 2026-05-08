@@ -8,6 +8,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -25,6 +26,16 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/microsoft-teams-bot:latest
 
+      - name: Copy Docker Compose File
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_PRIVATE_KEY }}
+          port: 2221
+          source: 'docker-compose.yml'
+          target: '/home/${{ secrets.VPS_USERNAME }}/projects/bot-microsoft-teams'
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
         with:
@@ -34,5 +45,9 @@ jobs:
           port: 2221
           script: |
             cd /home/${{ secrets.VPS_USERNAME }}/projects/bot-microsoft-teams
+
             docker compose pull
-            docker compose up -d --force-recreate --remove-orphans
+
+            docker compose up -d \
+              --force-recreate \
+              --remove-orphans
