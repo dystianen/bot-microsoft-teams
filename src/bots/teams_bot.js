@@ -473,6 +473,7 @@ class TeamsBot {
           '--window-position=0,0',
           '--disable-gpu',
           '--disable-software-rasterizer',
+          '--disable-features=VizDisplayCompositor',
         ],
       });
       this.context = await this.browser.newContext();

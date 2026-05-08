@@ -1,19 +1,23 @@
 services:
   teams-bot:
     image: dystian/microsoft-teams-bot:latest
-    shm_size: '2gb'
     container_name: microsoft-teams-bot
-    restart: always
+
     network_mode: host
-    env_file: .env
+    ipc: host
+    shm_size: '2gb'
+
+    security_opt:
+      - seccomp:unconfined
+
+    cap_add:
+      - SYS_ADMIN
+
     environment:
-      - DISPLAY=:20
+      - DISPLAY=:1
       - XAUTHORITY=/root/.Xauthority
+      - QT_X11_NO_MITSHM=1
+
     volumes:
-      - /home/zulpanpratama/.Xauthority:/root/.Xauthority:ro
       - /tmp/.X11-unix:/tmp/.X11-unix
-    logging:
-      driver: 'json-file'
-      options:
-        max-size: '10m'
-        max-file: '3'
+      - /home/zulpanpratama/.Xauthority:/root/.Xauthority:rw
