@@ -1498,9 +1498,11 @@ class TeamsBot {
         )
         .first();
       const teamsErrorMarker = teamsPage
-        .locator(
-          "text=/something went wrong|terjadi kesalahan|une erreur s'est produite|run into an issue|we've run into an issue/i"
-        )
+        .locator("text=/something went wrong|terjadi kesalahan|une erreur s'est produite/i")
+        .first();
+
+      const retryErrorMarker = teamsPage
+        .locator("text=/run into an issue|we've run into an issue/i")
         .first();
 
       console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, Chat, or Error (60s)...');
@@ -1511,12 +1513,11 @@ class TeamsBot {
           .or(permissionErrorLocator)
           .or(chatMarker)
           .or(teamsErrorMarker)
+          .or(retryErrorMarker)
           .waitFor({ state: 'visible', timeout: 60000 });
 
-        if (await teamsErrorMarker.isVisible().catch(() => false)) {
-          console.warn(
-            `[WARN] 'Run into an issue' detected. Reloading page (Attempt ${attempt}/3)...`
-          );
+        if (await retryErrorMarker.isVisible().catch(() => false)) {
+          if (attempt === 3) throw new Error('RETRY_FAILED: Error tetap muncul setelah 3x reload.');
           await teamsPage.reload({ waitUntil: 'domcontentloaded' });
           await teamsPage.waitForTimeout(8000);
           continue;
@@ -1646,8 +1647,6 @@ class TeamsBot {
             bodyText.includes('cloudflare')
           ) {
             cleanMsg += ' — Status: Terhalang verifikasi browser (DDoS protection).';
-          } else if (bodyText.length < 100) {
-            cleanMsg += ' — Status: Halaman kosong atau gagal muat.';
           } else {
             const snippet = bodyText.substring(0, 80).replace(/\n/g, ' ');
             cleanMsg += ` — Teks halaman: "${snippet}..."`;
