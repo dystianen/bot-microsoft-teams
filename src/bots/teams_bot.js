@@ -1259,14 +1259,17 @@ class TeamsBot {
       "👤 Menambahkan user baru 'teams' karena masalah izin..."
     );
 
+    console.log('[STEP 22.1] Navigating to Admin Users page...');
     await this.page.goto('https://admin.cloud.microsoft/?#/users', {
       waitUntil: 'domcontentloaded',
       timeout: HARD_TIMEOUT,
     });
     await this.waitForSpinnerGone(2000);
+    console.log('[INFO] Handling potential popups...');
     await this.handlePopups();
 
     // 1. Click Add a user
+    console.log('[STEP 1] Clicking "Add a user" button...');
     const addUserBtn = this.page
       .locator(
         'button:has-text("Add a user"), button:has-text("Tambah pengguna"), button:has-text("Ajouter un utilisateur")'
@@ -1282,17 +1285,20 @@ class TeamsBot {
       .locator('[data-automation-id="AddUserWizard_firstName"]')
       .first();
     await this.waitForVisible(firstNameInput);
+    console.log('[STEP 2] Filling first name: teams');
     await firstNameInput.fill('teams');
 
     const displayNameInput = this.page
       .locator('[data-automation-id="AddUserWizard_displayName"]')
       .first();
+    console.log('[STEP 2] Clicking display name to auto-generate...');
     await displayNameInput.click();
     await this.humanDelay(500, 1000);
 
     const userNameInput = this.page
       .locator('[data-automation-id="AddUserWizard_userName"]')
       .first();
+    console.log('[STEP 2] Filling username: teams');
     await userNameInput.fill('teams');
 
     // Get the domain name from the dropdown to form the email
@@ -1305,10 +1311,12 @@ class TeamsBot {
     await remoteLogger.logStep(email, 22.21, '🔓 Memastikan semua checkbox tidak tercentang...');
     const checkedCheckboxes = this.page.locator('.ms-Checkbox.is-checked');
     const cbCount = await checkedCheckboxes.count();
+    console.log(`[INFO] Found ${cbCount} checked checkboxes to uncheck.`);
     for (let i = 0; i < cbCount; i++) {
       // Always target the first visible checked checkbox
       const targetCb = this.page.locator('.ms-Checkbox.is-checked').first();
       if (await targetCb.isVisible()) {
+        console.log(`[STEP 2.21] Unchecking checkbox ${i + 1}...`);
         await targetCb.click();
         await this.humanDelay(400, 800);
       }
@@ -1316,8 +1324,10 @@ class TeamsBot {
 
     const pwdInput = this.page.locator('[data-automation-id="AddUserWizard_password"]').first();
     await this.waitForVisible(pwdInput);
+    console.log('[STEP 2] Typing password: Buyer_123');
     await this.humanType(pwdInput, 'Buyer_123');
 
+    console.log('[STEP 2] Clicking Next...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
     await this.waitForSpinnerGone(200);
 
@@ -1327,12 +1337,15 @@ class TeamsBot {
       .locator('[data-automation-id="AddUserWithoutLicense"]')
       .first();
     await this.waitForVisible(noLicenseRadio);
+    console.log('[STEP 3] Selecting "Create user without product license"...');
     await noLicenseRadio.click({ force: true });
+    console.log('[STEP 3] Clicking Next...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
     await this.waitForSpinnerGone(200);
 
     // 4. Optional settings
     await remoteLogger.logStep(email, 22.4, '⚙️ Melewati pengaturan opsional...');
+    console.log('[STEP 4] Skipping optional settings...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
     await this.waitForSpinnerGone(200);
 
@@ -1344,6 +1357,7 @@ class TeamsBot {
       )
       .first();
     await this.waitForVisible(finishBtn);
+    console.log('[STEP 5] Clicking "Finish adding" button...');
     await finishBtn.click();
     await this.waitForSpinnerGone(200);
 
@@ -1355,6 +1369,7 @@ class TeamsBot {
     );
 
     // Close the panel
+    console.log('[STEP 6] Closing "Add User" success panel...');
     await this.clickButtonWithPossibleNames(['Close', 'Tutup', 'Fermer']);
     await this.waitForSpinnerGone(1000);
 
@@ -1399,6 +1414,7 @@ class TeamsBot {
     const teamsPage = await this.context.newPage();
     try {
       try {
+        console.log('[STEP 21] Navigating to Microsoft Teams...');
         await teamsPage.goto('https://teams.microsoft.com/v2/', {
           waitUntil: 'domcontentloaded',
           timeout: HARD_TIMEOUT,
@@ -1437,6 +1453,7 @@ class TeamsBot {
       if (await loginEmailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
         console.log(`[INFO] Logging in as: ${email}`);
         await loginEmailInput.fill(email);
+        console.log('[STEP 22] Submitting email...');
         await teamsPage.keyboard.press('Enter');
         await this.humanDelay(1500, 2500);
 
@@ -1447,6 +1464,7 @@ class TeamsBot {
           await pwdInput.fill(
             isWorkaround ? 'Buyer_123' : this.accountConfig.microsoftAccount.password
           );
+          console.log('[STEP 22] Submitting password...');
           await teamsPage.keyboard.press('Enter');
           await this.humanDelay(1500, 2500);
         }
@@ -1456,6 +1474,7 @@ class TeamsBot {
           .locator('button:has-text("Yes"), button:has-text("Ya"), #idSIButton9')
           .first();
         if (await yesBtn.isVisible({ timeout: 15000 }).catch(() => false)) {
+          console.log('[INFO] Clicking "Yes" for "Stay signed in"...');
           await yesBtn.click();
           await this.humanDelay(1000, 2000);
         }
@@ -1663,6 +1682,7 @@ class TeamsBot {
       await this._loginToAdminCenter(email, this.accountConfig.microsoftAccount.password);
     }
 
+    console.log('[STEP 24] Navigating to Admin Users page for license restoration...');
     await this.page.goto('https://admin.cloud.microsoft/?#/users', {
       waitUntil: 'domcontentloaded',
       timeout: HARD_TIMEOUT,
@@ -1710,11 +1730,13 @@ class TeamsBot {
           );
         }
 
+        console.log(`[STEP 25] Searching for user: ${email}`);
         await finalSearchInput.clear();
         await finalSearchInput.fill(email);
         await this.page.keyboard.press('Enter');
         await this.waitForSpinnerGone(2000);
 
+        console.log('[STEP 25] Clicking user row...');
         const finalUserRow = this.page
           .locator(
             'div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button'
@@ -1747,6 +1769,7 @@ class TeamsBot {
       )
       .first();
     await this.waitForVisible(finalLicensesTab);
+    console.log('[STEP 26] Clicking Licenses and apps tab...');
     await finalLicensesTab.click();
     await this.waitForSpinnerGone(2000);
 
