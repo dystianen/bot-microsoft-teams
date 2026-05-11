@@ -228,7 +228,8 @@ function initializeBotHandlers(bot) {
       };
 
       const processAccount = async (accountData, currentIdx) => {
-        await safeSendMessage(
+        // Non-blocking status message
+        safeSendMessage(
           chatId,
           `⏳ [${currentIdx}/${originalTotal}] Processing: ${escapeHTML(accountData.email)}`
         );
