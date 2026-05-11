@@ -1301,35 +1301,22 @@ class TeamsBot {
     const createdEmail = `teams@${domainName}`;
     console.log(`[INFO] Workaround email generated: ${createdEmail}`);
 
-    // Uncheck "Automatically create a password"
-    const autoPwdInput = this.page
-      .locator('input#checkbox-493, [data-ktp-execute-target="true"]')
-      .first();
-    const autoPwdLabel = this.page
-      .locator(
-        'label:has-text("Automatically create a password"), label:has-text("Buat kata sandi secara otomatis")'
-      )
-      .first();
-    if ((await autoPwdInput.isVisible()) && (await autoPwdInput.isChecked())) {
-      await autoPwdLabel.click();
-      await this.humanDelay(300, 600);
+    // Uncheck all checkboxes (Automatically create password, Require password change, etc.)
+    await remoteLogger.logStep(email, 22.21, '🔓 Memastikan semua checkbox tidak tercentang...');
+    const checkedCheckboxes = this.page.locator('.ms-Checkbox.is-checked');
+    const cbCount = await checkedCheckboxes.count();
+    for (let i = 0; i < cbCount; i++) {
+      // Always target the first visible checked checkbox
+      const targetCb = this.page.locator('.ms-Checkbox.is-checked').first();
+      if (await targetCb.isVisible()) {
+        await targetCb.click();
+        await this.humanDelay(400, 800);
+      }
     }
 
     const pwdInput = this.page.locator('[data-automation-id="AddUserWizard_password"]').first();
     await this.waitForVisible(pwdInput);
     await this.humanType(pwdInput, 'Buyer_123');
-
-    // Uncheck "Require this user to change their password"
-    const changePwdInput = this.page.locator('input#checkbox-502').first();
-    const changePwdLabel = this.page
-      .locator(
-        'label:has-text("Require this user to change their password"), label:has-text("Wajibkan pengguna ini mengubah kata sandi")'
-      )
-      .first();
-    if ((await changePwdInput.isVisible()) && (await changePwdInput.isChecked())) {
-      await changePwdLabel.click();
-      await this.humanDelay(300, 600);
-    }
 
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
     await this.waitForSpinnerGone(200);
@@ -1352,7 +1339,9 @@ class TeamsBot {
     // 5. Review and finish
     await remoteLogger.logStep(email, 22.5, '🏁 Menyelesaikan pembuatan user...');
     const finishBtn = this.page
-      .locator('button:has-text("Finish adding"), button:has-text("Selesai menambahkan")')
+      .locator(
+        'button:has-text("Finish adding"), button:has-text("Selesai menambahkan"), button:has-text("Terminer l\'ajout")'
+      )
       .first();
     await this.waitForVisible(finishBtn);
     await finishBtn.click();
