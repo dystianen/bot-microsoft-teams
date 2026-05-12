@@ -174,7 +174,7 @@ function initializeBotHandlers(bot) {
 
     bot.sendMessage(
       chatId,
-      'Welcome to Microsoft Teams Bot! 🤖 (Playwright Local)\n\nAdd accounts as email|password and they will be launched concurrently with a 5s stagger.',
+      'Welcome to Microsoft Teams Bot! 🤖 (Playwright Local)\n\nAdd accounts as email|password and they will be launched concurrently with a 20s stagger.',
       mainMenu
     );
   });
@@ -344,7 +344,7 @@ function initializeBotHandlers(bot) {
             pendingPromises.add(promise);
 
             if (accountsToProcess.length > 0 && activeWorkers < maxWorkers) {
-              await new Promise((r) => setTimeout(r, 2500));
+              await new Promise((r) => setTimeout(r, 20000));
             }
           } else if (activeWorkers === 0 && (accountsToProcess.length === 0 || session.forceStop)) {
             break;
@@ -723,7 +723,7 @@ function initializeBotHandlers(bot) {
         await userConf.save();
         bot.sendMessage(
           chatId,
-          `Concurrency updated to ${num}. Bot will now open up to ${num} windows together with 5s delay.`,
+          `Concurrency updated to ${num}. Bot will now open up to ${num} windows together with 20s delay.`,
           mainMenu
         );
         session.step = 'IDLE';
