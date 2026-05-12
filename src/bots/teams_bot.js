@@ -505,8 +505,8 @@ class TeamsBot {
     await remoteLogger.logStep(email, 3, `📧 Memasukkan email: ${email}`);
     const emailInput = this.getGenericLocator('email');
     await this.waitForVisible(emailInput);
-    await emailInput.fill(email);
-    await this.humanDelay(500, 1000);
+    await this.humanType(emailInput, email.trim());
+    await this.humanDelay(800, 1200);
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
 
     console.log('[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...');
@@ -537,10 +537,10 @@ class TeamsBot {
       console.log("[INFO] No 'Choose a way to sign in' prompt found, continuing...");
     }
     await remoteLogger.logStep(email, 4, '🔑 Memasukkan password akun...');
-    const passwordInput = this.page.locator('input[type="password"]').first();
+    const passwordInput = this.page.locator('input[type="password"], input[name="passwd"]').first();
     await this.waitForVisible(passwordInput);
-    await passwordInput.fill(password);
-    await this.humanDelay(500, 1000);
+    await this.humanType(passwordInput, password.trim());
+    await this.humanDelay(800, 1200);
     await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
 
     await remoteLogger.logStep(
