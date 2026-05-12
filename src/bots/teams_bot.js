@@ -1307,17 +1307,22 @@ class TeamsBot {
     const createdEmail = `teams@${domainName}`;
     console.log(`[INFO] Workaround email generated: ${createdEmail}`);
 
-    // Uncheck all checkboxes (Automatically create password, Require password change, etc.)
+    // Uncheck all checkboxes
     await remoteLogger.logStep(email, 22.21, '🔓 Memastikan semua checkbox tidak tercentang...');
-    const checkedCheckboxes = this.page.locator('.ms-Checkbox.is-checked');
-    const cbCount = await checkedCheckboxes.count();
+
+    // Target by specific automation IDs or use input[type=checkbox]
+    const checkboxInputs = this.page.locator('.ms-Checkbox input[type="checkbox"]:checked');
+    const cbCount = await checkboxInputs.count();
     console.log(`[INFO] Found ${cbCount} checked checkboxes to uncheck.`);
-    for (let i = 0; i < cbCount; i++) {
-      // Always target the first visible checked checkbox
-      const targetCb = this.page.locator('.ms-Checkbox.is-checked').first();
-      if (await targetCb.isVisible()) {
+
+    // Collect all checked checkbox labels FIRST, then click each
+    const checkboxLabels = this.page.locator('.ms-Checkbox.is-checked .ms-Checkbox-label');
+    const labels = await checkboxLabels.all(); // snapshot, tidak re-query
+
+    for (let i = 0; i < labels.length; i++) {
+      if (await labels[i].isVisible()) {
         console.log(`[STEP 2.21] Unchecking checkbox ${i + 1}...`);
-        await targetCb.click();
+        await labels[i].click();
         await this.humanDelay(400, 800);
       }
     }
