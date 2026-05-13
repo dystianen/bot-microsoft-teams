@@ -11,7 +11,7 @@ async function processSingleAccount(accountConfig, index, total) {
   try {
     // If you want to use AdsPower, you'd need to add that logic back here.
     // For now, we launch a local browser (incognito) as requested.
-    bot = new TeamsBot(null, accountConfig);
+    bot = new TeamsBot(accountConfig);
     const result = await bot.run();
 
     if (result && result.success) {

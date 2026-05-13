@@ -24,10 +24,10 @@ async function startBot() {
 
     const bot = new TelegramBot(token, {
       polling: {
-        interval: 300,
+        interval: 2000,
         autoStart: true,
         params: {
-          timeout: 50,
+          timeout: 10,
         },
       },
     });

@@ -17,8 +17,7 @@ const SELECTORS = {
 };
 
 class TeamsBot {
-  constructor(wsUrl, accountConfig) {
-    this.wsUrl = wsUrl;
+  constructor(accountConfig) {
     this.browser = null;
     this.context = null;
     this.page = null;
@@ -453,42 +452,66 @@ class TeamsBot {
   }
 
   async connect() {
-    if (this.wsUrl) {
-      console.log('[STEP 1] Connecting to browser via Ads Power...');
-      this.browser = await chromium.connectOverCDP(this.wsUrl);
-      const contexts = this.browser.contexts();
-      this.context = contexts.length > 0 ? contexts[0] : await this.browser.newContext();
-    } else {
-      console.log('[STEP 1] Launching local browser in incognito mode...');
-      this.browser = await chromium.launch({
-        headless:
-          this.accountConfig?.headless !== undefined
-            ? this.accountConfig.headless
-            : config.headless,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--incognito',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-dev-shm-usage',
-          '--mute-audio',
-          '--start-maximized',
-          '--window-position=0,0',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--disable-features=VizDisplayCompositor',
-        ],
-      });
-      this.context = await this.browser.newContext();
-    }
+    console.log('[STEP 1] Launching browser...');
+    this.browser = await chromium.launch({
+      headless:
+        this.accountConfig?.headless !== undefined ? this.accountConfig.headless : config.headless,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--incognito',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-dev-shm-usage',
+        '--mute-audio',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-extensions',
+        '--disable-notifications',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-sync',
+        '--disable-hang-monitor',
+        '--disable-canvas-aa',
+        '--disable-2d-canvas-clip-utils',
+        '--disable-gl-drawing-for-tests',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-features=VizDisplayCompositor',
+      ],
+    });
+    this.context = await this.browser.newContext();
+
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
 
-    // --- CPU Saver: Resource Blocking (Network Interception) ---
-    // Memblokir assets gambar, media, dan font. Dipertahankan stylesheet (CSS) karena dibutuhkan untuk selector layout.
+    // --- CPU Saver: Aggressive Resource Blocking ---
     await this.context.route('**/*', (route) => {
+      const url = route.request().url().toLowerCase();
       const type = route.request().resourceType();
-      if (['image', 'media', 'font'].includes(type)) {
+
+      // Daftar keyword domain telemetry/tracking yang berat
+      const blockPatterns = [
+        'telemetry',
+        'analytics',
+        'stats',
+        'metrics',
+        'events.data.microsoft',
+        'vortex.data',
+        'pipe.aria',
+        'clarity.ms',
+        'google-analytics',
+        'browser.events',
+        'self.events',
+        'omni.microsoft',
+      ];
+
+      const shouldBlockDomain = blockPatterns.some((p) => url.includes(p));
+
+      if (['image', 'media', 'font'].includes(type) || shouldBlockDomain) {
         route.abort('blockedbyclient');
       } else {
         route.continue();
@@ -573,24 +596,7 @@ class TeamsBot {
         const loginLoopStart = Date.now();
 
         while (Date.now() - loginLoopStart < 120000) {
-          const err = await this.checkForError();
-          if (err) {
-            const lowerErr = err.toLowerCase();
-            if (
-              lowerErr.includes('went wrong') ||
-              lowerErr.includes('happened') ||
-              lowerErr.includes('terjadi sesuatu') ||
-              lowerErr.includes("une erreur s'est produite") ||
-              lowerErr.includes('terjadi kesalahan')
-            ) {
-              console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
-              await this.page.reload({ waitUntil: 'domcontentloaded' });
-              await this.page.waitForTimeout(5000);
-              continue;
-            }
-            throw new Error(`LOGIN_FAILED: ${err}`);
-          }
-
+          // 1. Cek Success (Dashboard) - Harus dicek setiap iterasi agar cepat
           if (await dashboardMarker.isVisible().catch(() => false)) {
             console.log('[SUCCESS] Dashboard detected!');
             await this.humanDelay(1000, 1500);
@@ -598,53 +604,70 @@ class TeamsBot {
             return; // Login Berhasil
           }
 
-          const passField = this.page.locator('input[type="password"]').first();
-          const isPassVisible = await passField.isVisible().catch(() => false);
-          const yesBtn = this.page
-            .locator(
-              'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], button:has-text("Oui"), input[value="Oui"], #idSIButton9'
-            )
-            .first();
+          // 2. Optimasi CPU: Hanya cek popup & error & prompt setiap ~4 detik (setiap 2 iterasi)
+          const elapsed = Date.now() - loginLoopStart;
+          const iteration = Math.floor(elapsed / 2000);
 
-          if (!isPassVisible && (await yesBtn.isVisible().catch(() => false))) {
-            console.log("[INFO] Handling 'Stay signed in'...");
-            try {
-              await yesBtn.click({ timeout: 5000 });
-              await this.humanDelay(1000, 1500);
+          if (iteration % 2 === 0) {
+            await this.handlePopups();
+            const err = await this.checkForError();
+            if (err) {
+              const lowerErr = err.toLowerCase();
+              if (
+                lowerErr.includes('went wrong') ||
+                lowerErr.includes('happened') ||
+                lowerErr.includes('terjadi sesuatu') ||
+                lowerErr.includes("une erreur s'est produite") ||
+                lowerErr.includes('terjadi kesalahan')
+              ) {
+                console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
+                await this.page.reload({ waitUntil: 'domcontentloaded' });
+                await this.page.waitForTimeout(5000);
+                continue;
+              }
+              throw new Error(`LOGIN_FAILED: ${err}`);
+            }
+
+            // Cek Prompts (KMSI / MFA / Use Password)
+            const passField = this.page.locator('input[type="password"]').first();
+            const isPassVisible = await passField.isVisible().catch(() => false);
+
+            // "Stay signed in?" (Yes)
+            const yesBtn = this.page
+              .locator(
+                'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], #idSIButton9'
+              )
+              .first();
+            if (!isPassVisible && (await yesBtn.isVisible().catch(() => false))) {
+              console.log("[INFO] Handling 'Stay signed in'...");
+              await yesBtn.click({ timeout: 5000 }).catch(() => {});
               continue;
-            } catch (e) {}
+            }
+
+            // MFA "Skip for now"
+            const skipBtn = this.page
+              .locator(
+                'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), button:has-text("Skip for now"), #idSecondaryButton'
+              )
+              .first();
+            if (await skipBtn.isVisible().catch(() => false)) {
+              console.log("[INFO] Handling MFA 'Skip for now'...");
+              await skipBtn.click({ timeout: 5000 }).catch(() => {});
+              continue;
+            }
+
+            // "Use my password"
+            const usePass = this.page
+              .locator('text=Use my password, text=Gunakan kata sandi saya, #allowInterrupt')
+              .first();
+            if (await usePass.isVisible().catch(() => false)) {
+              console.log("[INFO] Handling 'Use my password' prompt...");
+              await usePass.click({ timeout: 5000 }).catch(() => {});
+              continue;
+            }
           }
 
-          const skipBtn = this.page
-            .locator(
-              'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), a:has-text("Ignorer pour l\'instant"), button:has-text("Skip for now"), button:has-text("Ignorer pour l\'instant"), #idSecondaryButton'
-            )
-            .first();
-          if (await skipBtn.isVisible().catch(() => false)) {
-            console.log("[INFO] Handling MFA 'Skip for now'...");
-            try {
-              await skipBtn.click({ timeout: 5000 });
-              await this.humanDelay(1000, 1500);
-              continue;
-            } catch (e) {}
-          }
-
-          const usePass = this.page
-            .locator(
-              'text=Use my password, text=Gunakan kata sandi saya, text=Utiliser mon mot de passe, #allowInterrupt'
-            )
-            .first();
-          if (await usePass.isVisible().catch(() => false)) {
-            console.log("[INFO] Handling 'Use my password' prompt...");
-            try {
-              await usePass.click({ timeout: 5000 });
-              await this.humanDelay(1000, 1500);
-              continue;
-            } catch (e) {}
-          }
-
-          await this.handlePopups();
-          await this.page.waitForTimeout(800);
+          await this.page.waitForTimeout(2000);
         }
 
         if (!(await dashboardMarker.isVisible().catch(() => false))) {
