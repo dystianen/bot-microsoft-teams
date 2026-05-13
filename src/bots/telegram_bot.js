@@ -215,12 +215,10 @@ function initializeBotHandlers(bot) {
       const maxWorkers = userConf.concurrencyLimit;
       let globalIdx = 0;
 
-      // Snapshot: only process what was here when we started
-      const accountsToProcess = [...session.accounts];
-      session.accounts = []; // Clear queue to avoid re-processing same items
+      // Initialize activeQueue with current accounts
+      session.activeQueue = [...session.accounts];
+      session.accounts = []; // Clear for next input
 
-      const originalTotal = accountsToProcess.length;
-      const pendingPromises = new Set();
       const queueResults = {
         all: [],
         success: [],
@@ -231,7 +229,7 @@ function initializeBotHandlers(bot) {
         // Non-blocking status message
         safeSendMessage(
           chatId,
-          `⏳ [${currentIdx}/${originalTotal}] Processing: ${escapeHTML(accountData.email)}`
+          `⏳ [#${currentIdx}] Processing: ${escapeHTML(accountData.email)}`
         );
 
         const pairedData = {
@@ -243,7 +241,7 @@ function initializeBotHandlers(bot) {
 
         activeAccountsCount++;
         try {
-          const result = await processSingleAccount(pairedData, currentIdx - 1, originalTotal);
+          const result = await processSingleAccount(pairedData, currentIdx - 1);
 
           const historyRecord = new AccountHistory({
             email: accountData.email,
@@ -264,7 +262,7 @@ function initializeBotHandlers(bot) {
             queueResults.success.push(resItem);
             queueResults.all.push(resItem);
 
-            let message = `✅ <b>Success [${currentIdx}/${originalTotal}]</b>\n`;
+            let message = `✅ <b>Success [#${currentIdx}]</b>\n`;
             // Calculate WIB (UTC+7) manually and format without the 'true' flag
             const timeWib = new Date()
               .toLocaleString('en-GB', {
@@ -291,7 +289,7 @@ function initializeBotHandlers(bot) {
             queueResults.failed.push(resItem);
             queueResults.all.push(resItem);
 
-            let message = `❌ <b>Failed [${currentIdx}/${originalTotal}] for ${escapeHTML(accountData.email)}</b>\n`;
+            let message = `❌ <b>Failed [#${currentIdx}] for ${escapeHTML(accountData.email)}</b>\n`;
             message += `Log: ${escapeHTML(result.log || 'Unknown error')}`;
             await safeSendMessage(chatId, message, { parse_mode: 'HTML' });
           }
@@ -328,11 +326,11 @@ function initializeBotHandlers(bot) {
         while (true) {
           if (
             activeWorkers < maxWorkers &&
-            accountsToProcess.length > 0 &&
+            session.activeQueue.length > 0 &&
             !session.forceStop &&
             !isShuttingDown
           ) {
-            const accountData = accountsToProcess.shift();
+            const accountData = session.activeQueue.shift();
             globalIdx++;
             const currentIdx = globalIdx;
 
@@ -343,10 +341,10 @@ function initializeBotHandlers(bot) {
             });
             pendingPromises.add(promise);
 
-            if (accountsToProcess.length > 0 && activeWorkers < maxWorkers) {
+            if (session.activeQueue.length > 0 && activeWorkers < maxWorkers) {
               await new Promise((r) => setTimeout(r, 20000));
             }
-          } else if (activeWorkers === 0 && (accountsToProcess.length === 0 || session.forceStop)) {
+          } else if (activeWorkers === 0 && (session.activeQueue.length === 0 || session.forceStop)) {
             break;
           } else {
             await new Promise((r) => setTimeout(r, 1000));
@@ -690,27 +688,30 @@ function initializeBotHandlers(bot) {
           const email = parts[0];
           const password = parts[parts.length - 1];
 
-          // Check for duplicate email in current session
-          const isDuplicate = session.accounts.some(
-            (acc) => acc.email.toLowerCase() === email.toLowerCase()
-          );
+          // Check for duplicate in both staging and active queue
+          const isDuplicate =
+            session.accounts.some((acc) => acc.email.toLowerCase() === email.toLowerCase()) ||
+            (session.activeQueue &&
+              session.activeQueue.some((acc) => acc.email.toLowerCase() === email.toLowerCase()));
 
           if (!isDuplicate) {
-            session.accounts.push({
-              email: email,
-              password: password,
-            });
+            if (session.running && session.activeQueue) {
+              session.activeQueue.push({ email, password });
+            } else {
+              session.accounts.push({ email, password });
+            }
             added++;
           }
         }
       }
       if (added > 0) {
-        bot.sendMessage(chatId, `Successfully added ${added} accounts.`, mainMenu);
+        const target = session.running ? 'active queue' : 'staging list';
+        bot.sendMessage(chatId, `Successfully added ${added} accounts to ${target}.`, mainMenu);
         session.step = 'IDLE';
       } else if (lines.length > 0) {
         bot.sendMessage(
           chatId,
-          `No new accounts added (they might be duplicates or invalid format).`,
+          `No new accounts added (duplicates or invalid format).`,
           mainMenu
         );
         session.step = 'IDLE';

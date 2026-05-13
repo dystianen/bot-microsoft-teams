@@ -666,9 +666,14 @@ class TeamsBot {
           // 4. Handle MFA "Skip for now"
           const skipBtn = this.page
             .locator(
-              'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), ' +
-                'a:has-text("Lewati untuk sekarang"), a:has-text("Ignorer pour l\'instant"), ' +
-                'button:has-text("Skip for now"), button:has-text("Ignorer pour l\'instant"), ' +
+              'a:has-text("Skip for now"), ' +
+                'a:has-text("Lompati untuk sekarang"), ' +
+                'a:has-text("Lewati untuk sekarang"), ' +
+                'a:has-text("Ignorer pour l\'instant"), ' +
+                'a:has-text("Passer pour l\'instant"), ' +
+                'button:has-text("Skip for now"), ' +
+                'button:has-text("Ignorer pour l\'instant"), ' +
+                'button:has-text("Passer pour l\'instant"), ' +
                 '#idSecondaryButton'
             )
             .first();
