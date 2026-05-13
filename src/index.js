@@ -1,8 +1,8 @@
 const TeamsBot = require('./bots/teams_bot');
 
-async function processSingleAccount(accountConfig, index, total) {
+async function processSingleAccount(accountConfig, index) {
   console.log(
-    `\n--- Starting Account ${index + 1} of ${total}: ${accountConfig.microsoftAccount.email} ---`
+    `\n--- Starting Account [#${index + 1}]: ${accountConfig.microsoftAccount.email} ---`
   );
 
   let bot = null;
@@ -11,18 +11,18 @@ async function processSingleAccount(accountConfig, index, total) {
   try {
     // If you want to use AdsPower, you'd need to add that logic back here.
     // For now, we launch a local browser (incognito) as requested.
-    bot = new TeamsBot(null, accountConfig);
+    bot = new TeamsBot(accountConfig);
     const result = await bot.run();
 
     if (result && result.success) {
-      console.log(`[Account ${index + 1}] Automation finished successfully.`);
+      console.log(`[Account #${index + 1}] Automation finished successfully.`);
       executionResult = {
         status: 'SUCCESS',
         log: 'Completed successfully',
       };
     } else {
       console.error(
-        `[Account ${index + 1}] Automation failed: ${result?.error || 'Unknown error'}`
+        `[Account #${index + 1}] Automation failed: ${result?.error || 'Unknown error'}`
       );
       executionResult = {
         status: 'FAILED',
@@ -30,7 +30,7 @@ async function processSingleAccount(accountConfig, index, total) {
       };
     }
   } catch (err) {
-    console.error(`\n[ERROR Account ${index + 1}] failed:`, err.message);
+    console.error(`\n[ERROR Account #${index + 1}] failed:`, err.message);
     executionResult = {
       status: 'FAILED',
       log: err.message,
@@ -40,7 +40,7 @@ async function processSingleAccount(accountConfig, index, total) {
       try {
         await bot.cleanup();
       } catch (e) {
-        console.error(`[Account ${index + 1}] Bot cleanup error:`, e.message);
+        console.error(`[Account #${index + 1}] Bot cleanup error:`, e.message);
       }
     }
   }

@@ -17,8 +17,7 @@ const SELECTORS = {
 };
 
 class TeamsBot {
-  constructor(wsUrl, accountConfig) {
-    this.wsUrl = wsUrl;
+  constructor(accountConfig) {
     this.browser = null;
     this.context = null;
     this.page = null;
@@ -38,10 +37,47 @@ class TeamsBot {
     if (!text) return;
     await locator.click({ force: true }).catch(() => {});
     await this.page.waitForTimeout(100);
+
+    // Robust clear: Ctrl+A -> Backspace -> fill('')
+    await locator.press('Control+A').catch(() => {});
+    await this.page.keyboard.press('Backspace').catch(() => {});
     await locator.fill('');
+
+    await this.page.waitForTimeout(100);
     await locator.pressSequentially(text, {
       delay: Math.floor(Math.random() * 60) + 30,
     });
+  }
+
+  async humanPaste(locator, text) {
+    if (!text) return;
+    await locator.click({ force: true }).catch(() => {});
+    await this.page.waitForTimeout(100);
+    await locator.fill('');
+    await this.page.waitForTimeout(50);
+
+    // Gunakan locator.evaluate agar elemen di-passing langsung oleh Playwright
+    await locator.evaluate((el, val) => {
+      if (el) {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value'
+        )?.set;
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(el, val);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    }, text);
+
+    const current = await locator.inputValue().catch(() => '');
+    if (current !== text) {
+      await locator.fill(text);
+    }
   }
 
   async randomMouseMove() {
@@ -59,17 +95,23 @@ class TeamsBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        // CPU Saver: Relaxing polling interval from 1500ms to 5000ms
-        await this.page.waitForTimeout(5000).catch(() => {
+        // CPU Saver: Relaxing polling interval from 5s to 7s
+        await this.page.waitForTimeout(7000).catch(() => {
           isDone = true;
         });
         if (isDone) break;
 
-        const detectedError = await this.checkForError();
-        if (detectedError) {
-          errorMsg = detectedError;
-          isDone = true;
-          break;
+        // Hanya cek error jika halaman tidak sedang sibuk/loading
+        const spinner = this.page.locator(SPINNER_SELECTOR).first();
+        const isBusy = await spinner.isVisible().catch(() => false);
+
+        if (!isBusy) {
+          const detectedError = await this.checkForError();
+          if (detectedError) {
+            errorMsg = detectedError;
+            isDone = true;
+            break;
+          }
         }
       }
     };
@@ -129,49 +171,40 @@ class TeamsBot {
         'tidak dapat menemukan akun',
         'impossible de trouver un compte',
         "couldn't find an account",
+        'username may be incorrect',
         'Enter code',
         'Masukkan kode',
-        'Entrez le code',
-        'Enter the code displayed in the authenticator app',
-        'Masukkan kode yang ditampilkan di aplikasi pengautentikasi',
-        "Entrez le code affiché dans l'application d'authentification",
-        'Approve a request on my Microsoft Authenticator app',
-        'Approuver une demande sur mon application Microsoft Authenticator',
         'Verify your identity',
         'Verifikasi identitas Anda',
-        'Vérifiez votre identité',
-        // Order verification failed errors
-        'les vérifications de votre commande ont échoué',
         'order checks have failed',
         'pemeriksaan pesanan telah gagal',
-        'nous avons rencontré un problème',
-        'we encountered a problem',
         'kami mengalami masalah',
       ];
 
+      // 1. Cek selector error di SEMUA frame (Cepat & Spesifik)
       for (const frame of this.page.frames()) {
         try {
-          // 1. Cek selector error di tiap frame
           for (const selector of errorSelectors) {
             const el = frame.locator(selector).first();
-            if (await el.isVisible({ timeout: 500 }).catch(() => false)) {
-              const msg = (await el.innerText().catch(() => '')).trim();
-              if (msg) return `Field Error: ${msg}`;
+            if (await el.isVisible({ timeout: 200 }).catch(() => false)) {
+              const msg = (await el.textContent().catch(() => '')).trim();
+              if (msg && msg.length < 500) return `Field Error: ${msg}`;
             }
-          }
-
-          // 2. Cek marker teks di tiap frame
-          const frameText = await frame
-            .locator('body')
-            .innerText()
-            .catch(() => '');
-          const lowerText = frameText.toLowerCase();
-          const found = markers.find((m) => lowerText.includes(m.toLowerCase()));
-          if (found) {
-            return `Marker "${found}" detected.`;
           }
         } catch (e) {}
       }
+
+      // 2. Cek marker teks HANYA di Main Frame (Hanya jika selector tidak ketemu)
+      // Gunakan evaluate untuk mencari substring langsung di browser agar lebih ringan daripada textContent()
+      try {
+        const foundMarker = await this.page.evaluate((mks) => {
+          const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
+          if (!bodyText) return null;
+          return mks.find((m) => bodyText.includes(m.toLowerCase()));
+        }, markers);
+
+        if (foundMarker) return `Marker "${foundMarker}" detected.`;
+      } catch (e) {}
     } catch (err) {}
     return null;
   }
@@ -450,42 +483,79 @@ class TeamsBot {
   }
 
   async connect() {
-    if (this.wsUrl) {
-      console.log('[STEP 1] Connecting to browser via Ads Power...');
-      this.browser = await chromium.connectOverCDP(this.wsUrl);
-      const contexts = this.browser.contexts();
-      this.context = contexts.length > 0 ? contexts[0] : await this.browser.newContext();
-    } else {
-      console.log('[STEP 1] Launching local browser in incognito mode...');
-      this.browser = await chromium.launch({
-        headless:
-          this.accountConfig?.headless !== undefined
-            ? this.accountConfig.headless
-            : config.headless,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--incognito',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-dev-shm-usage',
-          '--mute-audio',
-          '--start-maximized',
-          '--window-position=0,0',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--disable-features=VizDisplayCompositor',
-        ],
-      });
-      this.context = await this.browser.newContext();
-    }
+    console.log('[STEP 1] Launching browser...');
+    this.browser = await chromium.launch({
+      headless:
+        this.accountConfig?.headless !== undefined ? this.accountConfig.headless : config.headless,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--incognito',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-dev-shm-usage',
+        '--mute-audio',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-extensions',
+        '--disable-notifications',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-sync',
+        '--disable-hang-monitor',
+        '--disable-canvas-aa',
+        '--disable-2d-canvas-clip-utils',
+        '--disable-gl-drawing-for-tests',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-features=VizDisplayCompositor',
+        '--disable-site-isolation-trials', // Mengurangi penggunaan memory/process (tapi kurang secure, ok buat bot)
+        '--js-flags="--max-old-space-size=256"', // Batasi memory JS agar tidak sering GC spikes
+        '--disable-v8-idle-tasks',
+        '--disable-background-timer-throttling',
+        '--disable-client-side-phishing-detection',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-hang-monitor',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-sync',
+        '--no-first-run',
+        '--no-default-browser-check',
+      ],
+    });
+    this.context = await this.browser.newContext();
+
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
 
-    // --- CPU Saver: Resource Blocking (Network Interception) ---
-    // Memblokir assets gambar, media, dan font. Dipertahankan stylesheet (CSS) karena dibutuhkan untuk selector layout.
+    // --- CPU Saver: Aggressive Resource Blocking ---
     await this.context.route('**/*', (route) => {
+      const url = route.request().url().toLowerCase();
       const type = route.request().resourceType();
-      if (['image', 'media', 'font'].includes(type)) {
+
+      // Daftar keyword domain telemetry/tracking yang berat
+      const blockPatterns = [
+        'telemetry',
+        'analytics',
+        'stats',
+        'metrics',
+        'events.data.microsoft',
+        'vortex.data',
+        'pipe.aria',
+        'clarity.ms',
+        'google-analytics',
+        'browser.events',
+        'self.events',
+        'omni.microsoft',
+      ];
+
+      const shouldBlockDomain = blockPatterns.some((p) => url.includes(p));
+
+      if (['image', 'media', 'font'].includes(type) || shouldBlockDomain) {
         route.abort('blockedbyclient');
       } else {
         route.continue();
@@ -495,251 +565,394 @@ class TeamsBot {
   }
 
   async _loginToAdminCenter(email, password) {
-    await remoteLogger.logStep(email, 2, '🌐 Membuka halaman Microsoft Admin Center...');
-    await this.page.goto('https://admin.microsoft.com/', {
-      waitUntil: 'domcontentloaded',
-      timeout: HARD_TIMEOUT,
-    });
-    await this.waitForSpinnerGone();
+    const MAX_ATTEMPTS = 3;
 
-    await remoteLogger.logStep(email, 3, `📧 Memasukkan email: ${email}`);
-    const emailInput = this.getGenericLocator('email');
-    await this.waitForVisible(emailInput);
-    await emailInput.fill(email);
-    await this.humanDelay(500, 1000);
-    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
-
-    console.log('[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...');
-    const passwordOrPrompt = this.page.locator(
-      'input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"]:has-text("Utiliser mon mot de passe")'
-    );
-    await passwordOrPrompt
-      .first()
-      .waitFor({ state: 'visible', timeout: 15000 })
-      .catch(() => {
-        throw new Error(
-          'EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. Cek apakah email sudah benar atau ada error di halaman.'
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        // ─── PHASE 1: Navigate & Enter Email ────────────────────────────────────
+        await remoteLogger.logStep(
+          email,
+          2,
+          `🌐 Membuka halaman Microsoft Admin Center${attempt > 1 ? ` (Retry ${attempt}/${MAX_ATTEMPTS})` : ''}...`
         );
-      });
 
-    console.log("[STEP 3.5] Checking for 'Choose a way to sign in' prompt...");
-    const usePasswordPrompt = this.page
-      .locator(
-        'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password"), div[role="button"][aria-label*="Gunakan kata sandi saya" i], div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"][aria-label*="Utiliser mon mot de passe" i], div[role="button"]:has-text("Utiliser mon mot de passe")'
-      )
-      .first();
-    try {
-      await usePasswordPrompt.waitFor({ state: 'visible', timeout: 5000 });
-      console.log("[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...");
-      await usePasswordPrompt.click();
-      await this.humanDelay(400, 800);
-    } catch (e) {
-      console.log("[INFO] No 'Choose a way to sign in' prompt found, continuing...");
-    }
-    await remoteLogger.logStep(email, 4, '🔑 Memasukkan password akun...');
-    const passwordInput = this.page.locator('input[type="password"]').first();
-    await this.waitForVisible(passwordInput);
-    await passwordInput.fill(password);
-    await this.humanDelay(500, 1000);
-    await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
+        await this.page.goto('https://admin.microsoft.com/', {
+          waitUntil: 'domcontentloaded',
+          timeout: HARD_TIMEOUT,
+        });
+        await this.waitForSpinnerGone();
 
-    await remoteLogger.logStep(
-      email,
-      5,
-      '⏳ Menunggu dashboard atau konfirmasi login (KMSI/MFA)...'
-    );
+        await remoteLogger.logStep(email, 3, `📧 Memasukkan email: ${email}`);
+        const emailInput = this.getGenericLocator('email');
+        await this.waitForVisible(emailInput);
 
-    const dashboardMarker = this.page
-      .locator('[data-hint="ReactLeftNav"], #admin-home-container')
-      .first();
-    const loginLoopStart = Date.now();
+        await this.humanPaste(emailInput, email.trim());
+        await this.humanDelay(1000, 2000); // Delay ekstra agar Microsoft memproses input
 
-    while (Date.now() - loginLoopStart < 120000) {
-      // 1. Cek Error Page / Pesan Kesalahan (Prioritas Utama)
-      const err = await this.checkForError();
-      if (err) {
-        const lowerErr = err.toLowerCase();
-        // Jika error adalah "Something went wrong" atau error jaringan sementara, reload saja
-        if (
-          lowerErr.includes('went wrong') ||
-          lowerErr.includes('happened') ||
-          lowerErr.includes('terjadi sesuatu') ||
-          lowerErr.includes("une erreur s'est produite") ||
-          lowerErr.includes('terjadi kesalahan')
-        ) {
-          console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
-          await this.page.reload({ waitUntil: 'domcontentloaded' });
-          await this.page.waitForTimeout(5000);
-          continue; // Lanjutkan loop tanpa berhenti
-        }
-        // Jika error fatal lainnya, lempar error
-        throw new Error(`LOGIN_FAILED: ${err}`);
-      }
+        // Verifikasi: Pastikan email terisi sebelum klik Next
+        await this.page
+          .waitForFunction(
+            (el) => el && el.value && el.value.length > 0,
+            await emailInput.elementHandle(),
+            { timeout: 5000 }
+          )
+          .catch(() => {});
 
-      // 2. Cek apakah sudah sampai Dashboard?
-      if (await dashboardMarker.isVisible().catch(() => false)) {
-        console.log('[SUCCESS] Dashboard detected!');
-        await this.humanDelay(1000, 1500);
-        await this.handlePopups();
-        return;
-      }
+        await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
 
-      // 3. Cek rintangan: Stay signed in (KMSI)
-      // Kita hanya menangani KMSI jika form password sudah hilang
-      const passField = this.page.locator('input[type="password"]').first();
-      const isPassVisible = await passField.isVisible().catch(() => false);
+        // ─── PHASE 2: Wait for Password Field or "Choose method" prompt ─────────
+        console.log('[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...');
+        const passwordOrPrompt = this.page.locator(
+          'input[type="password"], ' +
+            'div[role="button"]:has-text("Use my password"), ' +
+            'div[role="button"]:has-text("Gunakan kata sandi saya"), ' +
+            'div[role="button"]:has-text("Utiliser mon mot de passe")'
+        );
 
-      const yesBtn = this.page
-        .locator(
-          'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], button:has-text("Oui"), input[value="Oui"], #idSIButton9'
-        )
-        .first();
-
-      if (!isPassVisible && (await yesBtn.isVisible().catch(() => false))) {
-        console.log("[INFO] Handling 'Stay signed in'...");
         try {
-          await yesBtn.click({ timeout: 5000 });
-          await this.humanDelay(1000, 1500);
-          continue;
-        } catch (e) {
-          console.log("[WARN] 'Yes' button blocked or failed.");
+          await this.runWithMonitor(
+            passwordOrPrompt.first().waitFor({ state: 'visible', timeout: 15000 })
+          );
+        } catch (err) {
+          const pageErr = await this.checkForError();
+          if (pageErr) {
+            throw new Error(`LOGIN_FAILED: ${pageErr}`);
+          }
+          throw new Error(
+            `EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. (${err.message})`
+          );
         }
-      }
 
-      // 4. Cek rintangan: MFA Skip
-      const skipBtn = this.page
-        .locator(
-          'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), a:has-text("Ignorer pour l\'instant"), button:has-text("Skip for now"), button:has-text("Ignorer pour l\'instant"), #idSecondaryButton'
-        )
-        .first();
-      if (await skipBtn.isVisible().catch(() => false)) {
-        console.log("[INFO] Handling MFA 'Skip for now'...");
-        try {
-          await skipBtn.click({ timeout: 5000 });
-          await this.humanDelay(1000, 1500);
-          continue;
-        } catch (e) {
-          console.log("[WARN] 'Skip for now' blocked.");
+        // ─── PHASE 3: Handle "Choose a way to sign in" if present ───────────────
+        console.log("[STEP 3.5] Checking for 'Choose a way to sign in' prompt...");
+        const usePasswordPrompt = this.page
+          .locator(
+            'div[role="button"][aria-label*="Use my password" i], ' +
+              'div[role="button"]:has-text("Use my password"), ' +
+              'div[role="button"][aria-label*="Gunakan kata sandi saya" i], ' +
+              'div[role="button"]:has-text("Gunakan kata sandi saya"), ' +
+              'div[role="button"][aria-label*="Utiliser mon mot de passe" i], ' +
+              'div[role="button"]:has-text("Utiliser mon mot de passe")'
+          )
+          .first();
+
+        if (await usePasswordPrompt.isVisible({ timeout: 3000 }).catch(() => false)) {
+          console.log("[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...");
+          await usePasswordPrompt.click();
+          await this.humanDelay(400, 800);
+        } else {
+          console.log("[INFO] No 'Choose a way to sign in' prompt, continuing...");
         }
-      }
 
-      // 5. Cek rintangan: Use Password prompt
-      const usePass = this.page
-        .locator(
-          'text=Use my password, text=Gunakan kata sandi saya, text=Utiliser mon mot de passe, #allowInterrupt'
-        )
-        .first();
-      if (await usePass.isVisible().catch(() => false)) {
-        console.log("[INFO] Handling 'Use my password' prompt...");
-        try {
-          await usePass.click({ timeout: 5000 });
-          await this.humanDelay(1000, 1500);
-          continue;
-        } catch (e) {
-          console.log("[WARN] 'Use Password' prompt blocked.");
+        // ─── PHASE 4: Enter Password ─────────────────────────────────────────────
+        await remoteLogger.logStep(email, 4, '🔑 Memasukkan password akun...');
+        const passwordInput = this.getGenericLocator('password');
+        await this.waitForVisible(passwordInput);
+
+        await this.humanPaste(passwordInput, password.trim());
+        await this.humanDelay(800, 1200);
+
+        // Verifikasi tambahan: Pastikan password benar-benar terisi di DOM sebelum klik
+        await this.page
+          .waitForFunction(
+            (el) => el && el.value && el.value.length > 0,
+            await passwordInput.elementHandle(),
+            { timeout: 5000 }
+          )
+          .catch(() =>
+            console.warn('[WARN] Password field verification timeout, proceeding anyway...')
+          );
+
+        await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
+
+        // ─── PHASE 5: Post-login Loop (KMSI / MFA / Dashboard wait) ─────────────
+        await remoteLogger.logStep(
+          email,
+          5,
+          '⏳ Menunggu dashboard atau konfirmasi login (KMSI/MFA)...'
+        );
+
+        const dashboardMarker = this.page
+          .locator('[data-hint="ReactLeftNav"], #admin-home-container')
+          .first();
+        const loginLoopStart = Date.now();
+
+        while (Date.now() - loginLoopStart < 120000) {
+          // Tambahkan jeda di awal loop agar tidak memakan CPU (Throttling)
+          await this.page.waitForTimeout(2000);
+
+          // 1. Cek Dashboard (prioritas tertinggi)
+          if (await dashboardMarker.isVisible().catch(() => false)) {
+            console.log('[SUCCESS] Dashboard detected!');
+            await this.humanDelay(1000, 1500);
+            await this.handlePopups();
+            return; // ✅ Login berhasil
+          }
+
+          // 2. Cek error (setiap ~2 detik sudah cukup)
+          const err = await this.checkForError();
+          if (err) {
+            const lowerErr = err.toLowerCase();
+
+            // Error sementara → break dari while, lalu outer for-loop akan retry dari awal
+            if (
+              lowerErr.includes('went wrong') ||
+              lowerErr.includes('happened') ||
+              lowerErr.includes('terjadi sesuatu') ||
+              lowerErr.includes("une erreur s'est produite") ||
+              lowerErr.includes('terjadi kesalahan')
+            ) {
+              console.warn(`[RETRY] Terdeteksi error sementara: "${err}". Akan retry dari awal...`);
+              // Lempar error khusus agar outer loop tahu ini bisa di-retry
+              throw new Error(`RETRYABLE_ERROR: ${err}`);
+            }
+
+            // Error fatal (wrong password, wrong username, dsb) → jangan retry
+            throw new Error(`LOGIN_FAILED: ${err}`);
+          }
+
+          // 3. Handle "Stay signed in?" (KMSI) — hanya jika password field sudah hilang
+          const passField = this.page.locator('input[type="password"]').first();
+          const isPassVisible = await passField.isVisible().catch(() => false);
+
+          const yesBtn = this.page
+            .locator(
+              'button:has-text("Yes"), input[value="Yes"], ' +
+                'button:has-text("Ya"), input[value="Ya"], ' +
+                'button:has-text("Oui"), input[value="Oui"], ' +
+                '#idSIButton9'
+            )
+            .first();
+
+          if (!isPassVisible && (await yesBtn.isVisible().catch(() => false))) {
+            console.log("[INFO] Handling 'Stay signed in'...");
+            await yesBtn
+              .click({ timeout: 5000 })
+              .catch(() => console.warn("[WARN] 'Yes' button blocked."));
+            await this.humanDelay(1000, 1500);
+            continue;
+          }
+
+          // 4. Handle MFA "Skip for now"
+          const skipBtn = this.page
+            .locator(
+              'a:has-text("Skip for now"), ' +
+                'a:has-text("Lompati untuk sekarang"), ' +
+                'a:has-text("Lewati untuk sekarang"), ' +
+                'a:has-text("Ignorer pour l\'instant"), ' +
+                'a:has-text("Passer pour l\'instant"), ' +
+                'button:has-text("Skip for now"), ' +
+                'button:has-text("Ignorer pour l\'instant"), ' +
+                'button:has-text("Passer pour l\'instant"), ' +
+                '#idSecondaryButton'
+            )
+            .first();
+
+          if (await skipBtn.isVisible().catch(() => false)) {
+            console.log("[INFO] Handling MFA 'Skip for now'...");
+            await skipBtn
+              .click({ timeout: 5000 })
+              .catch(() => console.warn("[WARN] 'Skip for now' blocked."));
+            await this.humanDelay(1000, 1500);
+            continue;
+          }
+
+          // 5. Handle "Use my password" prompt
+          const usePass = this.page
+            .locator(
+              'text=Use my password, text=Gunakan kata sandi saya, ' +
+                'text=Utiliser mon mot de passe, #allowInterrupt'
+            )
+            .first();
+
+          if (await usePass.isVisible().catch(() => false)) {
+            console.log("[INFO] Handling 'Use my password' prompt...");
+            await usePass
+              .click({ timeout: 5000 })
+              .catch(() => console.warn("[WARN] 'Use Password' blocked."));
+            await this.humanDelay(1000, 1500);
+            continue;
+          }
+
+          await this.handlePopups();
+          await this.page.waitForTimeout(800);
         }
+
+        // Timeout habis tanpa mencapai dashboard
+        throw new Error('LOGIN_TIMEOUT: Dashboard not reached within 2 minutes.');
+      } catch (err) {
+        const errMsg = err.message || '';
+
+        const isRetryable =
+          errMsg.startsWith('RETRYABLE_ERROR:') ||
+          errMsg.includes('EMAIL_TRANSITION_FAILED') ||
+          errMsg.includes('LOGIN_TIMEOUT') ||
+          errMsg.includes('Timeout') ||
+          errMsg.includes('MICROSOFT_ERROR');
+
+        // Jika sudah attempt terakhir atau error tidak bisa di-retry, lempar langsung
+        if (attempt >= MAX_ATTEMPTS || !isRetryable) {
+          console.error(`[FATAL] Login gagal setelah ${attempt} percobaan: ${errMsg}`);
+          throw err;
+        }
+
+        const delay = 3000 + attempt * 2000; // 5s, 7s, dst
+        console.warn(
+          `[RETRY-LOGIN] Percobaan ${attempt}/${MAX_ATTEMPTS} gagal: ${errMsg}. ` +
+            `Menunggu ${delay / 1000}s lalu mengulang dari awal...`
+        );
+        await this.humanDelay(delay, delay + 2000);
+
+        // Navigasi ke blank page dulu agar state browser benar-benar bersih
+        // sebelum goto admin.microsoft.com di iterasi berikutnya
+        await this.page.goto('about:blank').catch(() => {});
+        await this.page.waitForTimeout(1000);
       }
-
-      await this.handlePopups();
-      await this.page.waitForTimeout(800);
-    }
-
-    if (!(await dashboardMarker.isVisible().catch(() => false))) {
-      throw new Error('LOGIN_FAILED: Dashboard not reached within 2 minutes.');
     }
   }
 
   async _deactivateAllLicenses(email) {
-    await remoteLogger.logStep(email, 6, "📂 Membuka halaman 'Pengguna Aktif' langsung via URL...");
-    await this.page.goto('https://admin.cloud.microsoft/?#/users', {
-      waitUntil: 'domcontentloaded',
-      timeout: HARD_TIMEOUT,
-    });
-    await this.waitForSpinnerGone(200);
-    await this.handlePopups();
+    // ─── Helper: navigate to Active Users page from a clean state ─────────────
+    // Dipakai saat pertama masuk DAN saat perlu retry dari awal.
+    const navigateToActiveUsers = async () => {
+      await this.page.goto('https://admin.cloud.microsoft/?#/users', {
+        waitUntil: 'domcontentloaded',
+        timeout: HARD_TIMEOUT,
+      });
 
+      // FIX 1: Jangan pakai delay angka kecil (200ms) setelah goto.
+      // SPA Microsoft butuh waktu untuk mount komponen setelah DOMContentLoaded.
+      // Tunggu sampai spinner benar-benar hilang dulu (tanpa batas minimum artifisial).
+      await this.waitForSpinnerGone();
+      await this.handlePopups();
+
+      // FIX 2: Setelah goto + spinnerGone, tunggu elemen "anchor" yang membuktikan
+      // halaman sudah fully mounted — bukan hanya cek isVisible sesaat.
+      // Kita tunggu searchInput dengan waitFor state:'visible', bukan isVisible(timeout).
+      // waitFor bersifat polling hingga stabil, sedangkan isVisible hanya snapshot sekali.
+      const searchInput = this.page.locator(SELECTORS.searchInput).first();
+      await searchInput.waitFor({ state: 'visible', timeout: 30000 });
+
+      // Tambahan: pastikan input benar-benar interaktable (tidak disabled/readonly)
+      await this.page
+        .waitForFunction(
+          (sel) => {
+            const el = document.querySelector(sel);
+            return el && !el.disabled && !el.readOnly && el.offsetParent !== null;
+          },
+          SELECTORS.searchInput,
+          { timeout: 10000 }
+        )
+        .catch(() => {
+          // Non-fatal: lanjut saja jika waitForFunction timeout,
+          // mungkin selector SELECTORS.searchInput bukan CSS sederhana
+        });
+    };
+
+    // ─── Helper: cari dan buka profil user ────────────────────────────────────
+    const searchAndOpenUser = async () => {
+      const searchInput = this.page.locator(SELECTORS.searchInput).first();
+
+      // Clear dan isi search field via robust humanType
+      await this.humanType(searchInput, email);
+
+      // FIX 3: Setelah fill, tunggu sebentar agar debounce search (jika ada) tidak terpotong
+      await this.humanDelay(400, 600);
+      await this.page.keyboard.press('Enter');
+
+      // FIX 4: Setelah Enter, jangan langsung cek userRow.
+      // Tunggu spinner loading hasil search hilang terlebih dahulu.
+      await this.waitForSpinnerGone(1500);
+
+      // FIX 5: Gunakan waitFor state:'visible' untuk userRow, bukan hanya waitForVisible
+      // yang bisa resolve terlalu cepat jika implementasinya berbasis isVisible snapshot.
+      const userRow = this.page.locator(SELECTORS.userRow).first();
+      await userRow.waitFor({ state: 'visible', timeout: 20000 });
+
+      // Verifikasi hasil search sesuai — antisipasi kasus "no results" / salah user
+      const nameFound = await userRow.textContent().catch(() => '');
+      if (!nameFound || nameFound.trim() === '') {
+        throw new Error(`USER_NOT_FOUND: Baris hasil search kosong untuk ${email}.`);
+      }
+
+      console.log(`[INFO] Clicking display name: "${nameFound.trim()}" (Found for ${email})`);
+      await userRow.click();
+
+      // FIX 6: Setelah klik userRow, tunggu panel/flyout terbuka — jangan pakai delay tetap.
+      // Tunggu sampai licensesTab muncul sebagai bukti panel sudah terbuka.
+      const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
+      await licensesTab.waitFor({ state: 'visible', timeout: 20000 });
+
+      return licensesTab;
+    };
+
+    // ─── Helper: buka tab Licenses ────────────────────────────────────────────
+    const openLicensesTab = async (licensesTab) => {
+      await licensesTab.click();
+
+      // FIX 7: Setelah klik tab, tunggu content tab licenses muncul (checkbox pertama)
+      // sebelum lanjut — bukan pakai waitForSpinnerGone(500) yang terlalu singkat.
+      const firstCheckbox = this.page.locator('input[type="checkbox"]').first();
+      await firstCheckbox.waitFor({ state: 'visible', timeout: 20000 });
+      await this.waitForSpinnerGone();
+    };
+
+    // ─── PHASE 1: Navigasi ke Active Users ────────────────────────────────────
+    await remoteLogger.logStep(email, 6, "📂 Membuka halaman 'Pengguna Aktif' langsung via URL...");
+    await navigateToActiveUsers();
+
+    // ─── PHASE 2: Search user dengan retry yang benar ─────────────────────────
     await remoteLogger.logStep(email, 8, `🔍 Mencari akun pengguna: ${email}...`);
 
-    let searchSuccess = false;
+    let licensesTab = null;
+
     for (let searchAttempt = 1; searchAttempt <= 3; searchAttempt++) {
       try {
-        const searchInput = this.page.locator(SELECTORS.searchInput).first();
+        licensesTab = await searchAndOpenUser();
+        break; // Berhasil, keluar dari loop
+      } catch (err) {
+        console.warn(`[WARN] Search attempt ${searchAttempt}/3 failed: ${err.message}`);
 
-        await this.waitForSpinnerGone();
-        const isVisible = await searchInput.isVisible({ timeout: 15000 }).catch(() => false);
-
-        if (!isVisible) {
-          console.warn(
-            `[RETRY] Search input not found (Attempt ${searchAttempt}/3). checking for errors...`
-          );
-          const pageErr = await this.checkForError();
-          if (pageErr) {
-            console.warn(`[RETRY] Detected page error: ${pageErr}. Reloading...`);
-            await this.page.reload({ waitUntil: 'domcontentloaded' });
-            await this.waitForSpinnerGone(2000);
-            await this.handlePopups();
-            continue;
-          }
-
-          if (searchAttempt < 3) {
-            console.warn(`[RETRY] Search input missing, retrying navigation...`);
-            await this.page.goto('https://admin.cloud.microsoft/?#/users', {
-              waitUntil: 'domcontentloaded',
-              timeout: HARD_TIMEOUT,
-            });
-            await this.waitForSpinnerGone(1000);
-            continue;
-          }
-
+        if (searchAttempt >= 3) {
           throw new Error(
-            'SEARCH_INPUT_NOT_FOUND: Search box tidak muncul di halaman Active Users.'
+            `SEARCH_ACCOUNT_FAILED: Gagal menemukan user "${email}" setelah 3 percobaan. Error terakhir: ${err.message}`
           );
         }
 
-        await searchInput.clear();
-        await searchInput.fill(email);
-        await this.page.keyboard.press('Enter');
-        await this.waitForSpinnerGone(2000);
+        // FIX 8: Retry search yang benar — reload halaman secara penuh,
+        // lalu tunggu stabilitas sebelum re-coba search.
+        // Sebelumnya: reload langsung lanjut ke continue tanpa verifikasi page stabil.
+        console.warn(`[RETRY] Melakukan reload halaman dan retry search (${searchAttempt}/3)...`);
+        await this.page.reload({ waitUntil: 'domcontentloaded' });
 
-        const userRow = this.page.locator(SELECTORS.userRow).first();
-        await this.waitForVisible(userRow);
-        const nameFound = await userRow.textContent();
-        console.log(`[INFO] Clicking display name: "${nameFound?.trim()}" (Found for ${email})`);
-        await userRow.click();
-        await this.humanDelay(800, 1500);
+        // Tunggu stabil — bukan delay tetap, tapi tunggu elemen anchor muncul
+        await this.waitForSpinnerGone();
+        await this.handlePopups();
 
-        searchSuccess = true;
-        break;
-      } catch (err) {
-        console.warn(`[WARN] Search attempt ${searchAttempt} failed: ${err.message}`);
-        if (searchAttempt === 3) throw err;
-        await this.page.waitForTimeout(3000);
+        const searchInput = this.page.locator(SELECTORS.searchInput).first();
+        try {
+          await searchInput.waitFor({ state: 'visible', timeout: 25000 });
+        } catch {
+          // Jika setelah reload searchInput masih tidak muncul, coba navigasi ulang
+          console.warn('[RETRY] Search input masih tidak muncul setelah reload, navigasi ulang...');
+          await navigateToActiveUsers();
+        }
+
+        await this.humanDelay(1000, 2000); // Jeda antar attempt
       }
     }
 
-    if (!searchSuccess) throw new Error('SEARCH_ACCOUNT_FAILED: Gagal mencari user.');
-
+    // ─── PHASE 3: Buka tab Licenses ───────────────────────────────────────────
     await remoteLogger.logStep(email, 9, "📋 Membuka tab 'Lisensi dan Aplikasi'...");
-    const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
-    await this.waitForVisible(licensesTab);
-    await licensesTab.click();
-    await this.waitForSpinnerGone(500);
+    await openLicensesTab(licensesTab);
 
-    // Step 10: uncheck all checked checkboxes
+    // ─── PHASE 4: Uncheck semua lisensi ───────────────────────────────────────
     await remoteLogger.logStep(email, 10, '🔲 Menonaktifkan semua lisensi yang sedang aktif...');
+
     try {
-      await this.waitForSpinnerGone(200);
-      const checkboxSelector = 'input[type="checkbox"]';
-
-      await this.page
-        .locator(checkboxSelector)
-        .first()
-        .waitFor({ state: 'visible', timeout: 15000 })
-        .catch(() => {});
-
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          await this.waitForSpinnerGone(200);
+          await this.waitForSpinnerGone();
 
           // Cek error "Something went wrong" dari Microsoft
           const pageErr = await this.checkForError();
@@ -750,27 +963,24 @@ class TeamsBot {
               pageErr.toLowerCase().includes("une erreur s'est produite") ||
               pageErr.toLowerCase().includes('happened'))
           ) {
-            console.warn(`[RETRY] Terdeteksi "${pageErr}" saat uncheck. Reloading...`);
+            console.warn(
+              `[RETRY] Terdeteksi "${pageErr}" saat uncheck. Memulai ulang dari search...`
+            );
+
+            // FIX 9: Saat error di step uncheck, jangan hanya reload — kita perlu
+            // kembali ke search dan buka user lagi karena state panel mungkin hilang.
             await this.page.reload({ waitUntil: 'domcontentloaded' });
-            await this.page.waitForTimeout(5000);
+            await this.waitForSpinnerGone();
             await this.handlePopups();
 
-            const freshLicensesTab = this.page.locator(SELECTORS.licensesTab).first();
-            if (!(await freshLicensesTab.isVisible().catch(() => false))) {
-              const searchInput = this.page.locator(SELECTORS.searchInput).first();
-              await this.waitForVisible(searchInput);
-              await searchInput.fill(email);
-              await this.page.keyboard.press('Enter');
-              await this.waitForSpinnerGone(2000);
-              await this.page.locator(SELECTORS.userRow).first().click();
-              await this.humanDelay(800, 1500);
-            }
-            await freshLicensesTab.click();
-            await this.waitForSpinnerGone(500);
+            const searchInput = this.page.locator(SELECTORS.searchInput).first();
+            await searchInput.waitFor({ state: 'visible', timeout: 25000 });
+
+            licensesTab = await searchAndOpenUser();
+            await openLicensesTab(licensesTab);
             continue;
           }
 
-          // === OPTIMIZED UNCHECK ===
           // Ambil semua checkbox yang checked sekaligus
           const checkedBoxes = await this.page.locator('input[type="checkbox"]:checked').all();
 
@@ -789,7 +999,10 @@ class TeamsBot {
           // Fallback ke sequential dengan delay minimal jika portal re-render DOM
           try {
             await Promise.all(checkedBoxes.map((cb) => cb.click({ force: true })));
-            await this.page.waitForTimeout(300); // single settle delay
+
+            // FIX 10: Ganti waitForTimeout(300) dengan waitForSpinnerGone setelah mass-click
+            // agar kita tahu DOM sudah settle sebelum melakukan verifikasi count.
+            await this.waitForSpinnerGone();
           } catch (parallelErr) {
             console.warn(
               `[WARN] Parallel uncheck failed (${parallelErr.message}), falling back to sequential...`
@@ -798,15 +1011,14 @@ class TeamsBot {
               try {
                 if (await cb.isChecked().catch(() => false)) {
                   await cb.click({ force: true });
-                  await this.page.waitForTimeout(80); // minimal delay
+                  await this.page.waitForTimeout(120);
                 }
               } catch (cbErr) {
                 console.warn(`[WARN] Skipping checkbox that errored: ${cbErr.message}`);
               }
             }
-            await this.page.waitForTimeout(300);
+            await this.waitForSpinnerGone();
           }
-          // === END OPTIMIZED UNCHECK ===
 
           // Verifikasi
           const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
@@ -848,9 +1060,24 @@ class TeamsBot {
 
     await this.humanDelay(1000, 2000);
 
+    // ─── PHASE 5: Save ─────────────────────────────────────────────────────────
     await remoteLogger.logStep(email, 11, '💾 Menyimpan perubahan lisensi (nonaktifkan semua)...');
     const saveBtn = this.page.locator(SELECTORS.saveBtn).first();
-    await this.waitForVisible(saveBtn);
+
+    // FIX 11: Tunggu saveBtn stabil sebelum klik — setelah mass-uncheck
+    // tombol save kadang masih disabled/animating selama beberapa ratus ms.
+    await saveBtn.waitFor({ state: 'visible', timeout: 15000 });
+    await this.page
+      .waitForFunction(
+        (sel) => {
+          const el = document.querySelector(sel);
+          return el && !el.disabled;
+        },
+        SELECTORS.saveBtn,
+        { timeout: 10000 }
+      )
+      .catch(() => {}); // Non-fatal, lanjut klik meski waitForFunction timeout
+
     await saveBtn.click();
     await this.waitForSpinnerGone(500);
     console.log('[INFO] Waiting for license save to settle...');
@@ -1259,14 +1486,17 @@ class TeamsBot {
       "👤 Menambahkan user baru 'teams' karena masalah izin..."
     );
 
+    console.log('[STEP 22.1] Navigating to Admin Users page...');
     await this.page.goto('https://admin.cloud.microsoft/?#/users', {
       waitUntil: 'domcontentloaded',
       timeout: HARD_TIMEOUT,
     });
     await this.waitForSpinnerGone(2000);
+    console.log('[INFO] Handling potential popups...');
     await this.handlePopups();
 
     // 1. Click Add a user
+    console.log('[STEP 1] Clicking "Add a user" button...');
     const addUserBtn = this.page
       .locator(
         'button:has-text("Add a user"), button:has-text("Tambah pengguna"), button:has-text("Ajouter un utilisateur")'
@@ -1282,17 +1512,20 @@ class TeamsBot {
       .locator('[data-automation-id="AddUserWizard_firstName"]')
       .first();
     await this.waitForVisible(firstNameInput);
+    console.log('[STEP 2] Filling first name: teams');
     await firstNameInput.fill('teams');
 
     const displayNameInput = this.page
       .locator('[data-automation-id="AddUserWizard_displayName"]')
       .first();
+    console.log('[STEP 2] Clicking display name to auto-generate...');
     await displayNameInput.click();
     await this.humanDelay(500, 1000);
 
     const userNameInput = this.page
       .locator('[data-automation-id="AddUserWizard_userName"]')
       .first();
+    console.log('[STEP 2] Filling username: teams');
     await userNameInput.fill('teams');
 
     // Get the domain name from the dropdown to form the email
@@ -1301,36 +1534,31 @@ class TeamsBot {
     const createdEmail = `teams@${domainName}`;
     console.log(`[INFO] Workaround email generated: ${createdEmail}`);
 
-    // Uncheck "Automatically create a password"
-    const autoPwdInput = this.page
-      .locator('input#checkbox-493, [data-ktp-execute-target="true"]')
-      .first();
-    const autoPwdLabel = this.page
-      .locator(
-        'label:has-text("Automatically create a password"), label:has-text("Buat kata sandi secara otomatis")'
-      )
-      .first();
-    if ((await autoPwdInput.isVisible()) && (await autoPwdInput.isChecked())) {
-      await autoPwdLabel.click();
-      await this.humanDelay(300, 600);
+    // Uncheck all checkboxes
+    await remoteLogger.logStep(email, 22.21, '🔓 Memastikan semua checkbox tidak tercentang...');
+    const labels = this.page.locator('.ms-Checkbox.is-checked .ms-Checkbox-label');
+    while ((await labels.count()) > 0) {
+      await labels.first().click();
+      await this.humanDelay(400, 800);
     }
-
     const pwdInput = this.page.locator('[data-automation-id="AddUserWizard_password"]').first();
     await this.waitForVisible(pwdInput);
+    console.log('[STEP 2] Typing password: Buyer_123');
     await this.humanType(pwdInput, 'Buyer_123');
+    await this.waitForSpinnerGone(3000);
 
-    // Uncheck "Require this user to change their password"
-    const changePwdInput = this.page.locator('input#checkbox-502').first();
-    const changePwdLabel = this.page
-      .locator(
-        'label:has-text("Require this user to change their password"), label:has-text("Wajibkan pengguna ini mengubah kata sandi")'
-      )
+    // Validation for password strength
+    const strengthLabel = this.page
+      .locator('.passwordSuccessMessage-871, [class*="passwordSuccessMessage-"]')
       .first();
-    if ((await changePwdInput.isVisible()) && (await changePwdInput.isChecked())) {
-      await changePwdLabel.click();
-      await this.humanDelay(300, 600);
-    }
+    console.log('[STEP 2] Waiting for password strength validation message...');
+    await strengthLabel.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+      console.warn(
+        '[WARN] Password strength validation label not detected within 10s, proceeding anyway.'
+      );
+    });
 
+    console.log('[STEP 2] Clicking Next...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
     await this.waitForSpinnerGone(200);
 
@@ -1340,22 +1568,27 @@ class TeamsBot {
       .locator('[data-automation-id="AddUserWithoutLicense"]')
       .first();
     await this.waitForVisible(noLicenseRadio);
+    console.log('[STEP 3] Selecting "Create user without product license"...');
     await noLicenseRadio.click({ force: true });
+    console.log('[STEP 3] Clicking Next...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
     await this.waitForSpinnerGone(200);
 
     // 4. Optional settings
     await remoteLogger.logStep(email, 22.4, '⚙️ Melewati pengaturan opsional...');
+    console.log('[STEP 4] Skipping optional settings...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
     await this.waitForSpinnerGone(200);
 
     // 5. Review and finish
     await remoteLogger.logStep(email, 22.5, '🏁 Menyelesaikan pembuatan user...');
-    const finishBtn = this.page
-      .locator('button:has-text("Finish adding"), button:has-text("Selesai menambahkan")')
-      .first();
-    await this.waitForVisible(finishBtn);
-    await finishBtn.click();
+    await this.clickButtonWithPossibleNames([
+      'Finish adding',
+      'Selesai menambahkan',
+      "Terminer l'ajout",
+      'Fin de l’ajout',
+      "Fin de l'ajout",
+    ]);
     await this.waitForSpinnerGone(200);
 
     // 6. Log result
@@ -1366,6 +1599,7 @@ class TeamsBot {
     );
 
     // Close the panel
+    console.log('[STEP 6] Closing "Add User" success panel...');
     await this.clickButtonWithPossibleNames(['Close', 'Tutup', 'Fermer']);
     await this.waitForSpinnerGone(1000);
 
@@ -1410,6 +1644,7 @@ class TeamsBot {
     const teamsPage = await this.context.newPage();
     try {
       try {
+        console.log('[STEP 21] Navigating to Microsoft Teams...');
         await teamsPage.goto('https://teams.microsoft.com/v2/', {
           waitUntil: 'domcontentloaded',
           timeout: HARD_TIMEOUT,
@@ -1429,7 +1664,6 @@ class TeamsBot {
       await remoteLogger.logStep(email, 22, '⏳ Menunggu Teams siap (Sign in atau Start Trial)...');
       await teamsPage.waitForTimeout(2000);
 
-      // Check if we need to log in (happens if we just signed out for workaround)
       const loginEmailInput = teamsPage
         .locator('input[type="email"], input[name="loginfmt"]')
         .first();
@@ -1438,40 +1672,6 @@ class TeamsBot {
           'div:has-text("Use another account"), #otherTile, [role="button"]:has-text("Use another account")'
         )
         .first();
-
-      if (await useAnotherAccountBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-        console.log("[INFO] 'Use another account' detected, clicking...");
-        await useAnotherAccountBtn.click();
-        await this.humanDelay(1000, 2000);
-      }
-
-      if (await loginEmailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-        console.log(`[INFO] Logging in as: ${email}`);
-        await loginEmailInput.fill(email);
-        await teamsPage.keyboard.press('Enter');
-        await this.humanDelay(1500, 2500);
-
-        const pwdInput = teamsPage.locator('input[type="password"]').first();
-        await pwdInput.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
-        if (await pwdInput.isVisible()) {
-          console.log('[INFO] Entering password...');
-          await pwdInput.fill(
-            isWorkaround ? 'Buyer_123' : this.accountConfig.microsoftAccount.password
-          );
-          await teamsPage.keyboard.press('Enter');
-          await this.humanDelay(1500, 2500);
-        }
-
-        // Handle "Stay signed in"
-        const yesBtn = teamsPage
-          .locator('button:has-text("Yes"), button:has-text("Ya"), #idSIButton9')
-          .first();
-        if (await yesBtn.isVisible({ timeout: 15000 }).catch(() => false)) {
-          await yesBtn.click();
-          await this.humanDelay(1000, 2000);
-        }
-      }
-
       const teamsSignInBtn = teamsPage
         .locator(
           'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk"), button:has-text("Se connecter"), a:has-text("Se connecter")'
@@ -1479,7 +1679,7 @@ class TeamsBot {
         .first();
       const startTrialBtn = teamsPage
         .locator(
-          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), button:has-text("Commencer l\'essai"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Commencer"), button:has-text("Démarrer"), button:has-text("Try now"), button:has-text("Essayer maintenant"), a:has-text("Get started")'
+          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), button:has-text("Commencer l\'essai"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Commencer"), button:has-text("Démarrer"), button:has-text("Try now"), button:has-text("Essayer sekarang"), a:has-text("Get started")'
         )
         .first();
       const pickAccountHeader = teamsPage
@@ -1494,89 +1694,131 @@ class TeamsBot {
         .first();
       const chatMarker = teamsPage
         .locator(
-          '[data-tid="chat-list-view"], [data-tid="app-bar-navigation-list"], #teams-app-container, [data-test-id="chat-list"], .teams-app-canvas'
+          '[data-tid="chat-list-view"], [data-tid="app-bar-navigation-list"], #teams-app-container, [data-test-id="chat-list"], .teams-app-canvas, div:has-text("Chat")'
         )
         .first();
       const teamsErrorMarker = teamsPage
-        .locator(
-          "text=/something went wrong|terjadi kesalahan|une erreur s'est produite|run into an issue|we've run into an issue/i"
-        )
+        .locator("text=/something went wrong|terjadi kesalahan|une erreur s'est produite/i")
+        .first();
+      const retryErrorMarker = teamsPage
+        .locator("text=/run into an issue|we've run into an issue/i")
         .first();
 
-      console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, Chat, or Error (60s)...');
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        await teamsSignInBtn
-          .or(startTrialBtn)
-          .or(pickAccountHeader)
-          .or(permissionErrorLocator)
-          .or(chatMarker)
-          .or(teamsErrorMarker)
-          .waitFor({ state: 'visible', timeout: 60000 });
+      console.log('[INFO] Entering Teams state detection loop...');
+      let flowFinished = false;
 
-        if (await teamsErrorMarker.isVisible().catch(() => false)) {
-          console.warn(
-            `[WARN] 'Run into an issue' detected. Reloading page (Attempt ${attempt}/3)...`
+      for (let attempt = 1; attempt <= 10; attempt++) {
+        if (flowFinished) break;
+        console.log(`[STEP 22] Detection loop attempt ${attempt}/10...`);
+
+        await Promise.race([
+          loginEmailInput.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          useAnotherAccountBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          teamsSignInBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          startTrialBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          pickAccountHeader.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          permissionErrorLocator.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          chatMarker.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          retryErrorMarker.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+        ]);
+
+        if (await chatMarker.isVisible().catch(() => false)) {
+          console.log('[INFO] Detected already in Teams chat interface.');
+          throw new Error(
+            'ALREADY_IN_CHAT: Terdeteksi sudah masuk ke chat Teams. Trial mungkin sudah aktif.'
           );
+        }
+
+        if (await startTrialBtn.isVisible().catch(() => false)) {
+          console.log("[SUCCESS] 'Start Trial' button found.");
+          flowFinished = true;
+          break;
+        }
+
+        if (await permissionErrorLocator.isVisible().catch(() => false)) {
+          if (isWorkaround)
+            throw new Error('PERMISSION_ERROR: Akun workaround juga tidak memiliki izin.');
+          console.warn('[ERROR] Permission error detected. Triggering workaround...');
+          await teamsPage.close().catch(() => {});
+          const newUser = await this._handleAddUserFlow(email);
+          return await this._activateTeamsTrial(newUser.email, true);
+        }
+
+        if (await retryErrorMarker.isVisible().catch(() => false)) {
+          console.log('[RETRY] Microsoft retry error detected, reloading...');
           await teamsPage.reload({ waitUntil: 'domcontentloaded' });
-          await teamsPage.waitForTimeout(8000);
+          await teamsPage.waitForTimeout(5000);
           continue;
         }
-        break;
-      }
 
-      if (await chatMarker.isVisible().catch(() => false)) {
-        console.log('[INFO] Detected already in Teams chat interface.');
-        throw new Error(
-          "ALREADY_IN_CHAT: Terdeteksi sudah masuk ke chat Teams. Tombol 'Mulai Uji Coba' tidak ditemukan, kemungkinan trial sudah aktif."
-        );
-      }
-
-      if (await permissionErrorLocator.isVisible().catch(() => false)) {
-        if (isWorkaround) {
-          throw new Error('PERMISSION_ERROR: Akun workaround juga tidak memiliki izin.');
+        if (await useAnotherAccountBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Use another account' detected, clicking...");
+          await useAnotherAccountBtn.click();
+          await this.humanDelay(1000, 2000);
+          continue;
         }
 
-        console.warn(
-          '[ERROR] Permission error page detected. Closing Teams tab and triggering workaround...'
-        );
-        await teamsPage.close().catch(() => {});
+        if (await loginEmailInput.isVisible().catch(() => false)) {
+          console.log(`[INFO] Login required. Entering email: ${email}`);
+          await loginEmailInput.fill(email);
+          await teamsPage.keyboard.press('Enter');
+          await this.humanDelay(2000, 3000);
 
-        const newUser = await this._handleAddUserFlow(email);
+          const pwdInput = teamsPage.locator('input[type="password"]').first();
+          await pwdInput.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+          if (await pwdInput.isVisible()) {
+            console.log('[INFO] Entering password...');
+            await pwdInput.fill(
+              isWorkaround ? 'Buyer_123' : this.accountConfig.microsoftAccount.password
+            );
+            await teamsPage.keyboard.press('Enter');
+            await this.humanDelay(2000, 3000);
+          }
 
-        // Retry activation with new user (Note: _handleAddUserFlow now handles sign-out)
-        return await this._activateTeamsTrial(newUser.email, true);
-      }
-
-      if (await pickAccountHeader.isVisible().catch(() => false)) {
-        console.log("[INFO] 'Pick an account' detected, selecting current user...");
-        const targetAccountItem = teamsPage
-          .locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`)
-          .first();
-        if (await targetAccountItem.isVisible().catch(() => false)) {
-          await targetAccountItem.click();
-        } else {
-          await teamsPage
-            .locator('div[role="listitem"], .tile-container')
-            .first()
-            .click()
-            .catch(() => {});
+          const yesBtn = teamsPage
+            .locator('button:has-text("Yes"), button:has-text("Ya"), #idSIButton9')
+            .first();
+          if (await yesBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+            console.log('[INFO] Clicking "Yes" for "Stay signed in"...');
+            await yesBtn.click();
+            await this.humanDelay(1000, 2000);
+          }
+          continue;
         }
+
+        if (await pickAccountHeader.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Pick an account' detected, selecting user...");
+          const target = teamsPage
+            .locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`)
+            .first();
+          if (await target.isVisible().catch(() => false)) {
+            await target.click();
+          } else {
+            await teamsPage
+              .locator('div[role="listitem"], .tile-container')
+              .first()
+              .click()
+              .catch(() => {});
+          }
+          await teamsPage.waitForTimeout(2000);
+          continue;
+        }
+
+        if (await teamsSignInBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Sign in' button detected, clicking...");
+          await teamsSignInBtn.click();
+          await teamsPage.waitForTimeout(3000);
+          continue;
+        }
+
+        console.log('[WARN] No specific state handled in this loop. Waiting...');
         await teamsPage.waitForTimeout(2000);
       }
 
-      if (await teamsSignInBtn.isVisible().catch(() => false)) {
-        console.log("[INFO] 'Sign in' button detected, clicking...");
-        await teamsSignInBtn.click();
-        await teamsPage.waitForTimeout(1500);
-        console.log("[INFO] Waiting for 'Start Trial' button or Chat after Sign in...");
-        await startTrialBtn.or(chatMarker).waitFor({ state: 'visible', timeout: 45000 });
-
-        if (await chatMarker.isVisible().catch(() => false)) {
-          console.log('[INFO] Entered Chat after Sign In.');
-          throw new Error(
-            'ALREADY_IN_CHAT: Berhasil Sign In namun langsung masuk ke chat (Trial mungkin sudah aktif).'
-          );
-        }
+      if (!flowFinished) {
+        throw new Error(
+          'START_TRIAL_NOT_FOUND: Gagal menemukan tombol Start Trial setelah 10 percobaan.'
+        );
       }
 
       await remoteLogger.logStep(
@@ -1673,6 +1915,7 @@ class TeamsBot {
       await this._loginToAdminCenter(email, this.accountConfig.microsoftAccount.password);
     }
 
+    console.log('[STEP 24] Navigating to Admin Users page for license restoration...');
     await this.page.goto('https://admin.cloud.microsoft/?#/users', {
       waitUntil: 'domcontentloaded',
       timeout: HARD_TIMEOUT,
@@ -1686,7 +1929,7 @@ class TeamsBot {
     );
 
     let restoreSearchSuccess = false;
-    for (let searchAttempt = 1; searchAttempt <= 3; searchAttempt++) {
+    for (let searchAttempt = 1; searchAttempt <= 2; searchAttempt++) {
       try {
         const finalSearchInput = this.page
           .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
@@ -1696,35 +1939,28 @@ class TeamsBot {
         const isVisible = await finalSearchInput.isVisible({ timeout: 15000 }).catch(() => false);
 
         if (!isVisible) {
-          console.warn(`[RETRY-RESTORE] Search input not found (Attempt ${searchAttempt}/3).`);
-          const pageErr = await this.checkForError();
-          if (pageErr) {
-            console.warn(`[RETRY-RESTORE] Detected error: ${pageErr}. Reloading...`);
+          console.warn(`[RETRY-RESTORE] Search input not found (Attempt ${searchAttempt}/2).`);
+
+          if (searchAttempt === 1) {
+            console.warn('[RETRY-RESTORE] Search box tidak muncul, melakukan refresh halaman...');
             await this.page.reload({ waitUntil: 'domcontentloaded' });
             await this.waitForSpinnerGone(2000);
             await this.handlePopups();
             continue;
           }
 
-          if (searchAttempt < 3) {
-            console.warn(`[RETRY-RESTORE] Search input missing, retrying navigation...`);
-            await this.page.goto('https://admin.cloud.microsoft/?#/users', {
-              waitUntil: 'domcontentloaded',
-              timeout: HARD_TIMEOUT,
-            });
-            await this.waitForSpinnerGone(1000);
-            continue;
-          }
           throw new Error(
             'RESTORE_SEARCH_INPUT_NOT_FOUND: Search box tidak muncul saat pemulihan.'
           );
         }
 
+        console.log(`[STEP 25] Searching for user: ${email}`);
         await finalSearchInput.clear();
         await finalSearchInput.fill(email);
         await this.page.keyboard.press('Enter');
         await this.waitForSpinnerGone(2000);
 
+        console.log('[STEP 25] Clicking user row...');
         const finalUserRow = this.page
           .locator(
             'div[data-automation-key="DisplayName"] span[role="button"], [role="gridcell"] button, [role="row"] button'
@@ -1757,6 +1993,7 @@ class TeamsBot {
       )
       .first();
     await this.waitForVisible(finalLicensesTab);
+    console.log('[STEP 26] Clicking Licenses and apps tab...');
     await finalLicensesTab.click();
     await this.waitForSpinnerGone(2000);
 

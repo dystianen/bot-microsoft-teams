@@ -192,7 +192,8 @@ class RemoteLogger {
     text += `📝 <b>Status:</b> ${this.escapeHTML(msg)}\n`;
     text += `${this.getProgressBar(stepNum)}`;
 
-    await this._sendOrEdit(email, text, false);
+    // FIX: Don't await log updates to keep bot execution snappy and concurrent
+    this._sendOrEdit(email, text, false).catch(() => {});
   }
 
   async logError(email, msg, details = '') {
