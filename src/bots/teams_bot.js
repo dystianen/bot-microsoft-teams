@@ -104,7 +104,7 @@ class TeamsBot {
         // Hanya cek error jika halaman tidak sedang sibuk/loading
         const spinner = this.page.locator(SPINNER_SELECTOR).first();
         const isBusy = await spinner.isVisible().catch(() => false);
-        
+
         if (!isBusy) {
           const detectedError = await this.checkForError();
           if (detectedError) {
@@ -198,9 +198,9 @@ class TeamsBot {
       // Gunakan evaluate untuk mencari substring langsung di browser agar lebih ringan daripada textContent()
       try {
         const foundMarker = await this.page.evaluate((mks) => {
-          const bodyText = document.body ? document.body.innerText.toLowerCase() : "";
+          const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
           if (!bodyText) return null;
-          return mks.find(m => bodyText.includes(m.toLowerCase()));
+          return mks.find((m) => bodyText.includes(m.toLowerCase()));
         }, markers);
 
         if (foundMarker) return `Marker "${foundMarker}" detected.`;
@@ -1536,28 +1536,27 @@ class TeamsBot {
 
     // Uncheck all checkboxes
     await remoteLogger.logStep(email, 22.21, '🔓 Memastikan semua checkbox tidak tercentang...');
-
-    // Target by specific automation IDs or use input[type=checkbox]
-    const checkboxInputs = this.page.locator('.ms-Checkbox input[type="checkbox"]:checked');
-    const cbCount = await checkboxInputs.count();
-    console.log(`[INFO] Found ${cbCount} checked checkboxes to uncheck.`);
-
-    // Collect all checked checkbox labels FIRST, then click each
-    const checkboxLabels = this.page.locator('.ms-Checkbox.is-checked .ms-Checkbox-label');
-    const labels = await checkboxLabels.all(); // snapshot, tidak re-query
-
-    for (let i = 0; i < labels.length; i++) {
-      if (await labels[i].isVisible()) {
-        console.log(`[STEP 2.21] Unchecking checkbox ${i + 1}...`);
-        await labels[i].click();
-        await this.humanDelay(400, 800);
-      }
+    const labels = this.page.locator('.ms-Checkbox.is-checked .ms-Checkbox-label');
+    while ((await labels.count()) > 0) {
+      await labels.first().click();
+      await this.humanDelay(400, 800);
     }
-
     const pwdInput = this.page.locator('[data-automation-id="AddUserWizard_password"]').first();
     await this.waitForVisible(pwdInput);
     console.log('[STEP 2] Typing password: Buyer_123');
     await this.humanType(pwdInput, 'Buyer_123');
+    await this.waitForSpinnerGone(3000);
+
+    // Validation for password strength
+    const strengthLabel = this.page
+      .locator('.passwordSuccessMessage-871, [class*="passwordSuccessMessage-"]')
+      .first();
+    console.log('[STEP 2] Waiting for password strength validation message...');
+    await strengthLabel.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {
+      console.warn(
+        '[WARN] Password strength validation label not detected within 10s, proceeding anyway.'
+      );
+    });
 
     console.log('[STEP 2] Clicking Next...');
     await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
@@ -1665,7 +1664,6 @@ class TeamsBot {
       await remoteLogger.logStep(email, 22, '⏳ Menunggu Teams siap (Sign in atau Start Trial)...');
       await teamsPage.waitForTimeout(2000);
 
-      // Check if we need to log in (happens if we just signed out for workaround)
       const loginEmailInput = teamsPage
         .locator('input[type="email"], input[name="loginfmt"]')
         .first();
@@ -1674,43 +1672,6 @@ class TeamsBot {
           'div:has-text("Use another account"), #otherTile, [role="button"]:has-text("Use another account")'
         )
         .first();
-
-      if (await useAnotherAccountBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-        console.log("[INFO] 'Use another account' detected, clicking...");
-        await useAnotherAccountBtn.click();
-        await this.humanDelay(1000, 2000);
-      }
-
-      if (await loginEmailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-        console.log(`[INFO] Logging in as: ${email}`);
-        await loginEmailInput.fill(email);
-        console.log('[STEP 22] Submitting email...');
-        await teamsPage.keyboard.press('Enter');
-        await this.humanDelay(1500, 2500);
-
-        const pwdInput = teamsPage.locator('input[type="password"]').first();
-        await pwdInput.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
-        if (await pwdInput.isVisible()) {
-          console.log('[INFO] Entering password...');
-          await pwdInput.fill(
-            isWorkaround ? 'Buyer_123' : this.accountConfig.microsoftAccount.password
-          );
-          console.log('[STEP 22] Submitting password...');
-          await teamsPage.keyboard.press('Enter');
-          await this.humanDelay(1500, 2500);
-        }
-
-        // Handle "Stay signed in"
-        const yesBtn = teamsPage
-          .locator('button:has-text("Yes"), button:has-text("Ya"), #idSIButton9')
-          .first();
-        if (await yesBtn.isVisible({ timeout: 15000 }).catch(() => false)) {
-          console.log('[INFO] Clicking "Yes" for "Stay signed in"...');
-          await yesBtn.click();
-          await this.humanDelay(1000, 2000);
-        }
-      }
-
       const teamsSignInBtn = teamsPage
         .locator(
           'button:has-text("Sign in"), a:has-text("Sign in"), button:has-text("Masuk"), a:has-text("Masuk"), button:has-text("Se connecter"), a:has-text("Se connecter")'
@@ -1718,7 +1679,7 @@ class TeamsBot {
         .first();
       const startTrialBtn = teamsPage
         .locator(
-          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), button:has-text("Commencer l\'essai"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Commencer"), button:has-text("Démarrer"), button:has-text("Try now"), button:has-text("Essayer maintenant"), a:has-text("Get started")'
+          'button:has-text("Start trial"), button:has-text("Mulai uji coba"), button:has-text("Commencer l\'essai"), [role="button"]:has-text("Start trial"), button:has-text("Get started"), button:has-text("Mulai"), button:has-text("Commencer"), button:has-text("Démarrer"), button:has-text("Try now"), button:has-text("Essayer sekarang"), a:has-text("Get started")'
         )
         .first();
       const pickAccountHeader = teamsPage
@@ -1739,84 +1700,125 @@ class TeamsBot {
       const teamsErrorMarker = teamsPage
         .locator("text=/something went wrong|terjadi kesalahan|une erreur s'est produite/i")
         .first();
-
       const retryErrorMarker = teamsPage
         .locator("text=/run into an issue|we've run into an issue/i")
         .first();
 
-      console.log('[INFO] Waiting for Sign In, Start Trial, Pick Account, Chat, or Error (60s)...');
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        await teamsSignInBtn
-          .or(startTrialBtn)
-          .or(pickAccountHeader)
-          .or(permissionErrorLocator)
-          .or(chatMarker)
-          .or(teamsErrorMarker)
-          .or(retryErrorMarker)
-          .waitFor({ state: 'visible', timeout: 60000 });
+      console.log('[INFO] Entering Teams state detection loop...');
+      let flowFinished = false;
+
+      for (let attempt = 1; attempt <= 10; attempt++) {
+        if (flowFinished) break;
+        console.log(`[STEP 22] Detection loop attempt ${attempt}/10...`);
+
+        await Promise.race([
+          loginEmailInput.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          useAnotherAccountBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          teamsSignInBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          startTrialBtn.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          pickAccountHeader.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          permissionErrorLocator.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          chatMarker.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+          retryErrorMarker.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+        ]);
+
+        if (await chatMarker.isVisible().catch(() => false)) {
+          console.log('[INFO] Detected already in Teams chat interface.');
+          throw new Error(
+            'ALREADY_IN_CHAT: Terdeteksi sudah masuk ke chat Teams. Trial mungkin sudah aktif.'
+          );
+        }
+
+        if (await startTrialBtn.isVisible().catch(() => false)) {
+          console.log("[SUCCESS] 'Start Trial' button found.");
+          flowFinished = true;
+          break;
+        }
+
+        if (await permissionErrorLocator.isVisible().catch(() => false)) {
+          if (isWorkaround)
+            throw new Error('PERMISSION_ERROR: Akun workaround juga tidak memiliki izin.');
+          console.warn('[ERROR] Permission error detected. Triggering workaround...');
+          await teamsPage.close().catch(() => {});
+          const newUser = await this._handleAddUserFlow(email);
+          return await this._activateTeamsTrial(newUser.email, true);
+        }
 
         if (await retryErrorMarker.isVisible().catch(() => false)) {
-          if (attempt === 3) throw new Error('RETRY_FAILED: Error tetap muncul setelah 3x reload.');
+          console.log('[RETRY] Microsoft retry error detected, reloading...');
           await teamsPage.reload({ waitUntil: 'domcontentloaded' });
-          await teamsPage.waitForTimeout(8000);
+          await teamsPage.waitForTimeout(5000);
           continue;
         }
-        break;
-      }
 
-      if (await chatMarker.isVisible().catch(() => false)) {
-        console.log('[INFO] Detected already in Teams chat interface.');
-        throw new Error(
-          "ALREADY_IN_CHAT: Terdeteksi sudah masuk ke chat Teams. Tombol 'Mulai Uji Coba' tidak ditemukan, kemungkinan trial sudah aktif."
-        );
-      }
-
-      if (await permissionErrorLocator.isVisible().catch(() => false)) {
-        if (isWorkaround) {
-          throw new Error('PERMISSION_ERROR: Akun workaround juga tidak memiliki izin.');
+        if (await useAnotherAccountBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Use another account' detected, clicking...");
+          await useAnotherAccountBtn.click();
+          await this.humanDelay(1000, 2000);
+          continue;
         }
 
-        console.warn(
-          '[ERROR] Permission error page detected. Closing Teams tab and triggering workaround...'
-        );
-        await teamsPage.close().catch(() => {});
+        if (await loginEmailInput.isVisible().catch(() => false)) {
+          console.log(`[INFO] Login required. Entering email: ${email}`);
+          await loginEmailInput.fill(email);
+          await teamsPage.keyboard.press('Enter');
+          await this.humanDelay(2000, 3000);
 
-        const newUser = await this._handleAddUserFlow(email);
+          const pwdInput = teamsPage.locator('input[type="password"]').first();
+          await pwdInput.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+          if (await pwdInput.isVisible()) {
+            console.log('[INFO] Entering password...');
+            await pwdInput.fill(
+              isWorkaround ? 'Buyer_123' : this.accountConfig.microsoftAccount.password
+            );
+            await teamsPage.keyboard.press('Enter');
+            await this.humanDelay(2000, 3000);
+          }
 
-        // Retry activation with new user (Note: _handleAddUserFlow now handles sign-out)
-        return await this._activateTeamsTrial(newUser.email, true);
-      }
-
-      if (await pickAccountHeader.isVisible().catch(() => false)) {
-        console.log("[INFO] 'Pick an account' detected, selecting current user...");
-        const targetAccountItem = teamsPage
-          .locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`)
-          .first();
-        if (await targetAccountItem.isVisible().catch(() => false)) {
-          await targetAccountItem.click();
-        } else {
-          await teamsPage
-            .locator('div[role="listitem"], .tile-container')
-            .first()
-            .click()
-            .catch(() => {});
+          const yesBtn = teamsPage
+            .locator('button:has-text("Yes"), button:has-text("Ya"), #idSIButton9')
+            .first();
+          if (await yesBtn.isVisible({ timeout: 10000 }).catch(() => false)) {
+            console.log('[INFO] Clicking "Yes" for "Stay signed in"...');
+            await yesBtn.click();
+            await this.humanDelay(1000, 2000);
+          }
+          continue;
         }
+
+        if (await pickAccountHeader.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Pick an account' detected, selecting user...");
+          const target = teamsPage
+            .locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`)
+            .first();
+          if (await target.isVisible().catch(() => false)) {
+            await target.click();
+          } else {
+            await teamsPage
+              .locator('div[role="listitem"], .tile-container')
+              .first()
+              .click()
+              .catch(() => {});
+          }
+          await teamsPage.waitForTimeout(2000);
+          continue;
+        }
+
+        if (await teamsSignInBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Sign in' button detected, clicking...");
+          await teamsSignInBtn.click();
+          await teamsPage.waitForTimeout(3000);
+          continue;
+        }
+
+        console.log('[WARN] No specific state handled in this loop. Waiting...');
         await teamsPage.waitForTimeout(2000);
       }
 
-      if (await teamsSignInBtn.isVisible().catch(() => false)) {
-        console.log("[INFO] 'Sign in' button detected, clicking...");
-        await teamsSignInBtn.click();
-        await teamsPage.waitForTimeout(1500);
-        console.log("[INFO] Waiting for 'Start Trial' button or Chat after Sign in...");
-        await startTrialBtn.or(chatMarker).waitFor({ state: 'visible', timeout: 45000 });
-
-        if (await chatMarker.isVisible().catch(() => false)) {
-          console.log('[INFO] Entered Chat after Sign In.');
-          throw new Error(
-            'ALREADY_IN_CHAT: Berhasil Sign In namun langsung masuk ke chat (Trial mungkin sudah aktif).'
-          );
-        }
+      if (!flowFinished) {
+        throw new Error(
+          'START_TRIAL_NOT_FOUND: Gagal menemukan tombol Start Trial setelah 10 percobaan.'
+        );
       }
 
       await remoteLogger.logStep(
