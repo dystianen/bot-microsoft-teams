@@ -1694,7 +1694,7 @@ class TeamsBot {
         .first();
       const chatMarker = teamsPage
         .locator(
-          '[data-tid="chat-list-view"], [data-tid="app-bar-navigation-list"], #teams-app-container, [data-test-id="chat-list"], .teams-app-canvas'
+          '[data-tid="chat-list-view"], [data-tid="app-bar-navigation-list"], #teams-app-container, [data-test-id="chat-list"], .teams-app-canvas, div:has-text("Chat")'
         )
         .first();
       const teamsErrorMarker = teamsPage
