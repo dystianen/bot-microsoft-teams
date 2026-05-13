@@ -37,12 +37,12 @@ class TeamsBot {
     if (!text) return;
     await locator.click({ force: true }).catch(() => {});
     await this.page.waitForTimeout(100);
-    
+
     // Robust clear: Ctrl+A -> Backspace -> fill('')
     await locator.press('Control+A').catch(() => {});
     await this.page.keyboard.press('Backspace').catch(() => {});
     await locator.fill('');
-    
+
     await this.page.waitForTimeout(100);
     await locator.pressSequentially(text, {
       delay: Math.floor(Math.random() * 60) + 30,
@@ -55,7 +55,7 @@ class TeamsBot {
     await this.page.waitForTimeout(100);
     await locator.fill('');
     await this.page.waitForTimeout(50);
-    
+
     // Gunakan locator.evaluate agar elemen di-passing langsung oleh Playwright
     await locator.evaluate((el, val) => {
       if (el) {
@@ -572,11 +572,13 @@ class TeamsBot {
         await this.humanDelay(1000, 2000); // Delay ekstra agar Microsoft memproses input
 
         // Verifikasi: Pastikan email terisi sebelum klik Next
-        await this.page.waitForFunction(
-          (el) => el && el.value && el.value.length > 0,
-          await emailInput.elementHandle(),
-          { timeout: 5000 }
-        ).catch(() => {});
+        await this.page
+          .waitForFunction(
+            (el) => el && el.value && el.value.length > 0,
+            await emailInput.elementHandle(),
+            { timeout: 5000 }
+          )
+          .catch(() => {});
 
         await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
 
@@ -626,20 +628,22 @@ class TeamsBot {
 
         // ─── PHASE 4: Enter Password ─────────────────────────────────────────────
         await remoteLogger.logStep(email, 4, '🔑 Memasukkan password akun...');
-        const passwordInput = this.page
-          .locator('input[type="password"], input[name="passwd"]')
-          .first();
+        const passwordInput = this.getGenericLocator('password');
         await this.waitForVisible(passwordInput);
 
         await this.humanPaste(passwordInput, password.trim());
         await this.humanDelay(800, 1200);
 
         // Verifikasi tambahan: Pastikan password benar-benar terisi di DOM sebelum klik
-        await this.page.waitForFunction(
-          (el) => el && el.value && el.value.length > 0,
-          await passwordInput.elementHandle(),
-          { timeout: 5000 }
-        ).catch(() => console.warn("[WARN] Password field verification timeout, proceeding anyway..."));
+        await this.page
+          .waitForFunction(
+            (el) => el && el.value && el.value.length > 0,
+            await passwordInput.elementHandle(),
+            { timeout: 5000 }
+          )
+          .catch(() =>
+            console.warn('[WARN] Password field verification timeout, proceeding anyway...')
+          );
 
         await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
 
