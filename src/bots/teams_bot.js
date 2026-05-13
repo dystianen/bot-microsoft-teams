@@ -37,7 +37,13 @@ class TeamsBot {
     if (!text) return;
     await locator.click({ force: true }).catch(() => {});
     await this.page.waitForTimeout(100);
+    
+    // Robust clear: Ctrl+A -> Backspace -> fill('')
+    await locator.press('Control+A').catch(() => {});
+    await this.page.keyboard.press('Backspace').catch(() => {});
     await locator.fill('');
+    
+    await this.page.waitForTimeout(100);
     await locator.pressSequentially(text, {
       delay: Math.floor(Math.random() * 60) + 30,
     });
@@ -531,9 +537,6 @@ class TeamsBot {
         const emailInput = this.getGenericLocator('email');
         await this.waitForVisible(emailInput);
 
-        // Pastikan field benar-benar kosong sebelum mengisi
-        await emailInput.fill('');
-        await this.humanDelay(300, 600);
         await this.humanType(emailInput, email.trim());
         await this.humanDelay(1000, 2000); // Delay ekstra agar Microsoft memproses input
 
@@ -590,9 +593,6 @@ class TeamsBot {
           .first();
         await this.waitForVisible(passwordInput);
 
-        // Pastikan field benar-benar kosong sebelum mengisi
-        await passwordInput.fill('');
-        await this.humanDelay(300, 500);
         await this.humanType(passwordInput, password.trim());
         await this.humanDelay(800, 1200);
 
@@ -783,10 +783,8 @@ class TeamsBot {
     const searchAndOpenUser = async () => {
       const searchInput = this.page.locator(SELECTORS.searchInput).first();
 
-      // Clear dan isi search field
-      await searchInput.clear();
-      await this.humanDelay(200, 400);
-      await searchInput.fill(email);
+      // Clear dan isi search field via robust humanType
+      await this.humanType(searchInput, email);
 
       // FIX 3: Setelah fill, tunggu sebentar agar debounce search (jika ada) tidak terpotong
       await this.humanDelay(400, 600);
