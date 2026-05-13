@@ -129,6 +129,9 @@ class TeamsBot {
         'tidak dapat menemukan akun',
         'impossible de trouver un compte',
         "couldn't find an account",
+        'username may be incorrect',
+        "nom d'utilisateur est peut-être incorrect",
+        'nama pengguna ini mungkin tidak benar',
         'Enter code',
         'Masukkan kode',
         'Entrez le code',
@@ -495,157 +498,171 @@ class TeamsBot {
   }
 
   async _loginToAdminCenter(email, password) {
-    await remoteLogger.logStep(email, 2, '🌐 Membuka halaman Microsoft Admin Center...');
-    await this.page.goto('https://admin.microsoft.com/', {
-      waitUntil: 'domcontentloaded',
-      timeout: HARD_TIMEOUT,
-    });
-    await this.waitForSpinnerGone();
-
-    await remoteLogger.logStep(email, 3, `📧 Memasukkan email: ${email}`);
-    const emailInput = this.getGenericLocator('email');
-    await this.waitForVisible(emailInput);
-    await this.humanType(emailInput, email.trim());
-    await this.humanDelay(800, 1200);
-    await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
-
-    console.log('[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...');
-    const passwordOrPrompt = this.page.locator(
-      'input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"]:has-text("Utiliser mon mot de passe")'
-    );
-    await passwordOrPrompt
-      .first()
-      .waitFor({ state: 'visible', timeout: 15000 })
-      .catch(() => {
-        throw new Error(
-          'EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. Cek apakah email sudah benar atau ada error di halaman.'
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await remoteLogger.logStep(
+          email,
+          2,
+          `🌐 Membuka halaman Microsoft Admin Center${attempt > 1 ? ` (Retry ${attempt}/3)` : ''}...`
         );
-      });
+        await this.page.goto('https://admin.microsoft.com/', {
+          waitUntil: 'domcontentloaded',
+          timeout: HARD_TIMEOUT,
+        });
+        await this.waitForSpinnerGone();
 
-    console.log("[STEP 3.5] Checking for 'Choose a way to sign in' prompt...");
-    const usePasswordPrompt = this.page
-      .locator(
-        'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password"), div[role="button"][aria-label*="Gunakan kata sandi saya" i], div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"][aria-label*="Utiliser mon mot de passe" i], div[role="button"]:has-text("Utiliser mon mot de passe")'
-      )
-      .first();
-    try {
-      await usePasswordPrompt.waitFor({ state: 'visible', timeout: 5000 });
-      console.log("[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...");
-      await usePasswordPrompt.click();
-      await this.humanDelay(400, 800);
-    } catch (e) {
-      console.log("[INFO] No 'Choose a way to sign in' prompt found, continuing...");
-    }
-    await remoteLogger.logStep(email, 4, '🔑 Memasukkan password akun...');
-    const passwordInput = this.page.locator('input[type="password"], input[name="passwd"]').first();
-    await this.waitForVisible(passwordInput);
-    await this.humanType(passwordInput, password.trim());
-    await this.humanDelay(800, 1200);
-    await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
+        await remoteLogger.logStep(email, 3, `📧 Memasukkan email: ${email}`);
+        const emailInput = this.getGenericLocator('email');
+        await this.waitForVisible(emailInput);
+        await this.humanType(emailInput, email.trim());
+        await this.humanDelay(1000, 2000); // Delay extra agar Microsoft memproses input
+        await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
 
-    await remoteLogger.logStep(
-      email,
-      5,
-      '⏳ Menunggu dashboard atau konfirmasi login (KMSI/MFA)...'
-    );
+        console.log('[STEP 3 VERIFY] Waiting for Password input or Choose method prompt...');
+        const passwordOrPrompt = this.page.locator(
+          'input[type="password"], div[role="button"]:has-text("Use my password"), div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"]:has-text("Utiliser mon mot de passe")'
+        );
 
-    const dashboardMarker = this.page
-      .locator('[data-hint="ReactLeftNav"], #admin-home-container')
-      .first();
-    const loginLoopStart = Date.now();
-
-    while (Date.now() - loginLoopStart < 120000) {
-      // 1. Cek Error Page / Pesan Kesalahan (Prioritas Utama)
-      const err = await this.checkForError();
-      if (err) {
-        const lowerErr = err.toLowerCase();
-        // Jika error adalah "Something went wrong" atau error jaringan sementara, reload saja
-        if (
-          lowerErr.includes('went wrong') ||
-          lowerErr.includes('happened') ||
-          lowerErr.includes('terjadi sesuatu') ||
-          lowerErr.includes("une erreur s'est produite") ||
-          lowerErr.includes('terjadi kesalahan')
-        ) {
-          console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
-          await this.page.reload({ waitUntil: 'domcontentloaded' });
-          await this.page.waitForTimeout(5000);
-          continue; // Lanjutkan loop tanpa berhenti
-        }
-        // Jika error fatal lainnya, lempar error
-        throw new Error(`LOGIN_FAILED: ${err}`);
-      }
-
-      // 2. Cek apakah sudah sampai Dashboard?
-      if (await dashboardMarker.isVisible().catch(() => false)) {
-        console.log('[SUCCESS] Dashboard detected!');
-        await this.humanDelay(1000, 1500);
-        await this.handlePopups();
-        return;
-      }
-
-      // 3. Cek rintangan: Stay signed in (KMSI)
-      // Kita hanya menangani KMSI jika form password sudah hilang
-      const passField = this.page.locator('input[type="password"]').first();
-      const isPassVisible = await passField.isVisible().catch(() => false);
-
-      const yesBtn = this.page
-        .locator(
-          'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], button:has-text("Oui"), input[value="Oui"], #idSIButton9'
-        )
-        .first();
-
-      if (!isPassVisible && (await yesBtn.isVisible().catch(() => false))) {
-        console.log("[INFO] Handling 'Stay signed in'...");
+        // Gunakan runWithMonitor agar jika muncul error "username incorrect" langsung terdeteksi
         try {
-          await yesBtn.click({ timeout: 5000 });
-          await this.humanDelay(1000, 1500);
-          continue;
-        } catch (e) {
-          console.log("[WARN] 'Yes' button blocked or failed.");
+          await this.runWithMonitor(
+            passwordOrPrompt.first().waitFor({ state: 'visible', timeout: 15000 })
+          );
+        } catch (err) {
+          const pageErr = await this.checkForError();
+          if (pageErr) {
+            throw new Error(`LOGIN_FAILED: ${pageErr}`);
+          }
+          throw new Error(
+            `EMAIL_TRANSITION_FAILED: Gagal lanjut ke pengisian password. (${err.message})`
+          );
         }
-      }
 
-      // 4. Cek rintangan: MFA Skip
-      const skipBtn = this.page
-        .locator(
-          'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), a:has-text("Ignorer pour l\'instant"), button:has-text("Skip for now"), button:has-text("Ignorer pour l\'instant"), #idSecondaryButton'
-        )
-        .first();
-      if (await skipBtn.isVisible().catch(() => false)) {
-        console.log("[INFO] Handling MFA 'Skip for now'...");
+        console.log("[STEP 3.5] Checking for 'Choose a way to sign in' prompt...");
+        const usePasswordPrompt = this.page
+          .locator(
+            'div[role="button"][aria-label*="Use my password" i], div[role="button"]:has-text("Use my password"), div[role="button"][aria-label*="Gunakan kata sandi saya" i], div[role="button"]:has-text("Gunakan kata sandi saya"), div[role="button"][aria-label*="Utiliser mon mot de passe" i], div[role="button"]:has-text("Utiliser mon mot de passe")'
+          )
+          .first();
         try {
-          await skipBtn.click({ timeout: 5000 });
-          await this.humanDelay(1000, 1500);
-          continue;
-        } catch (e) {
-          console.log("[WARN] 'Skip for now' blocked.");
+          if (await usePasswordPrompt.isVisible({ timeout: 3000 }).catch(() => false)) {
+            console.log("[INFO] 'Choose a way to sign in' detected, clicking 'Use my password'...");
+            await usePasswordPrompt.click();
+            await this.humanDelay(400, 800);
+          }
+        } catch (e) {}
+
+        await remoteLogger.logStep(email, 4, '🔑 Memasukkan password akun...');
+        const passwordInput = this.page
+          .locator('input[type="password"], input[name="passwd"]')
+          .first();
+        await this.waitForVisible(passwordInput);
+        await this.humanType(passwordInput, password.trim());
+        await this.humanDelay(800, 1200);
+        await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
+
+        await remoteLogger.logStep(
+          email,
+          5,
+          '⏳ Menunggu dashboard atau konfirmasi login (KMSI/MFA)...'
+        );
+
+        const dashboardMarker = this.page
+          .locator('[data-hint="ReactLeftNav"], #admin-home-container')
+          .first();
+        const loginLoopStart = Date.now();
+
+        while (Date.now() - loginLoopStart < 120000) {
+          const err = await this.checkForError();
+          if (err) {
+            const lowerErr = err.toLowerCase();
+            if (
+              lowerErr.includes('went wrong') ||
+              lowerErr.includes('happened') ||
+              lowerErr.includes('terjadi sesuatu') ||
+              lowerErr.includes("une erreur s'est produite") ||
+              lowerErr.includes('terjadi kesalahan')
+            ) {
+              console.warn(`[RETRY] Terdeteksi "${err}", melakukan reload halaman...`);
+              await this.page.reload({ waitUntil: 'domcontentloaded' });
+              await this.page.waitForTimeout(5000);
+              continue;
+            }
+            throw new Error(`LOGIN_FAILED: ${err}`);
+          }
+
+          if (await dashboardMarker.isVisible().catch(() => false)) {
+            console.log('[SUCCESS] Dashboard detected!');
+            await this.humanDelay(1000, 1500);
+            await this.handlePopups();
+            return; // Login Berhasil
+          }
+
+          const passField = this.page.locator('input[type="password"]').first();
+          const isPassVisible = await passField.isVisible().catch(() => false);
+          const yesBtn = this.page
+            .locator(
+              'button:has-text("Yes"), input[value="Yes"], button:has-text("Ya"), input[value="Ya"], button:has-text("Oui"), input[value="Oui"], #idSIButton9'
+            )
+            .first();
+
+          if (!isPassVisible && (await yesBtn.isVisible().catch(() => false))) {
+            console.log("[INFO] Handling 'Stay signed in'...");
+            try {
+              await yesBtn.click({ timeout: 5000 });
+              await this.humanDelay(1000, 1500);
+              continue;
+            } catch (e) {}
+          }
+
+          const skipBtn = this.page
+            .locator(
+              'a:has-text("Skip for now"), a:has-text("Lompati untuk sekarang"), a:has-text("Lewati untuk sekarang"), a:has-text("Ignorer pour l\'instant"), button:has-text("Skip for now"), button:has-text("Ignorer pour l\'instant"), #idSecondaryButton'
+            )
+            .first();
+          if (await skipBtn.isVisible().catch(() => false)) {
+            console.log("[INFO] Handling MFA 'Skip for now'...");
+            try {
+              await skipBtn.click({ timeout: 5000 });
+              await this.humanDelay(1000, 1500);
+              continue;
+            } catch (e) {}
+          }
+
+          const usePass = this.page
+            .locator(
+              'text=Use my password, text=Gunakan kata sandi saya, text=Utiliser mon mot de passe, #allowInterrupt'
+            )
+            .first();
+          if (await usePass.isVisible().catch(() => false)) {
+            console.log("[INFO] Handling 'Use my password' prompt...");
+            try {
+              await usePass.click({ timeout: 5000 });
+              await this.humanDelay(1000, 1500);
+              continue;
+            } catch (e) {}
+          }
+
+          await this.handlePopups();
+          await this.page.waitForTimeout(800);
         }
-      }
 
-      // 5. Cek rintangan: Use Password prompt
-      const usePass = this.page
-        .locator(
-          'text=Use my password, text=Gunakan kata sandi saya, text=Utiliser mon mot de passe, #allowInterrupt'
-        )
-        .first();
-      if (await usePass.isVisible().catch(() => false)) {
-        console.log("[INFO] Handling 'Use my password' prompt...");
-        try {
-          await usePass.click({ timeout: 5000 });
-          await this.humanDelay(1000, 1500);
-          continue;
-        } catch (e) {
-          console.log("[WARN] 'Use Password' prompt blocked.");
+        if (!(await dashboardMarker.isVisible().catch(() => false))) {
+          throw new Error('LOGIN_FAILED: Dashboard not reached within 2 minutes.');
         }
+      } catch (err) {
+        const errMsg = err.message || '';
+        const isRetryable =
+          errMsg.includes('LOGIN_FAILED') ||
+          errMsg.includes('EMAIL_TRANSITION_FAILED') ||
+          errMsg.includes('Timeout') ||
+          errMsg.includes('MICROSOFT_ERROR');
+
+        if (attempt === 3 || !isRetryable) throw err;
+
+        console.warn(`[RETRY-LOGIN] Percobaan ${attempt} gagal: ${errMsg}. Mengulang login...`);
+        await this.humanDelay(2000, 5000);
       }
-
-      await this.handlePopups();
-      await this.page.waitForTimeout(800);
-    }
-
-    if (!(await dashboardMarker.isVisible().catch(() => false))) {
-      throw new Error('LOGIN_FAILED: Dashboard not reached within 2 minutes.');
     }
   }
 
