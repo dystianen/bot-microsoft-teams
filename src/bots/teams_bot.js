@@ -686,25 +686,13 @@ class TeamsBot {
         const isVisible = await searchInput.isVisible({ timeout: 15000 }).catch(() => false);
 
         if (!isVisible) {
-          console.warn(
-            `[RETRY] Search input not found (Attempt ${searchAttempt}/3). checking for errors...`
-          );
-          const pageErr = await this.checkForError();
-          if (pageErr) {
-            console.warn(`[RETRY] Detected page error: ${pageErr}. Reloading...`);
+          console.warn(`[RETRY] Search input not found (Attempt ${searchAttempt}/3).`);
+
+          if (searchAttempt < 3) {
+            console.warn('[RETRY] Search box tidak muncul, melakukan refresh halaman...');
             await this.page.reload({ waitUntil: 'domcontentloaded' });
             await this.waitForSpinnerGone(2000);
             await this.handlePopups();
-            continue;
-          }
-
-          if (searchAttempt < 3) {
-            console.warn(`[RETRY] Search input missing, retrying navigation...`);
-            await this.page.goto('https://admin.cloud.microsoft/?#/users', {
-              waitUntil: 'domcontentloaded',
-              timeout: HARD_TIMEOUT,
-            });
-            await this.waitForSpinnerGone(1000);
             continue;
           }
 
@@ -1718,7 +1706,7 @@ class TeamsBot {
     );
 
     let restoreSearchSuccess = false;
-    for (let searchAttempt = 1; searchAttempt <= 3; searchAttempt++) {
+    for (let searchAttempt = 1; searchAttempt <= 2; searchAttempt++) {
       try {
         const finalSearchInput = this.page
           .locator('[data-automation-id="UserListV2,CommandBarSearchInputBox"]')
@@ -1728,25 +1716,16 @@ class TeamsBot {
         const isVisible = await finalSearchInput.isVisible({ timeout: 15000 }).catch(() => false);
 
         if (!isVisible) {
-          console.warn(`[RETRY-RESTORE] Search input not found (Attempt ${searchAttempt}/3).`);
-          const pageErr = await this.checkForError();
-          if (pageErr) {
-            console.warn(`[RETRY-RESTORE] Detected error: ${pageErr}. Reloading...`);
+          console.warn(`[RETRY-RESTORE] Search input not found (Attempt ${searchAttempt}/2).`);
+
+          if (searchAttempt === 1) {
+            console.warn('[RETRY-RESTORE] Search box tidak muncul, melakukan refresh halaman...');
             await this.page.reload({ waitUntil: 'domcontentloaded' });
             await this.waitForSpinnerGone(2000);
             await this.handlePopups();
             continue;
           }
 
-          if (searchAttempt < 3) {
-            console.warn(`[RETRY-RESTORE] Search input missing, retrying navigation...`);
-            await this.page.goto('https://admin.cloud.microsoft/?#/users', {
-              waitUntil: 'domcontentloaded',
-              timeout: HARD_TIMEOUT,
-            });
-            await this.waitForSpinnerGone(1000);
-            continue;
-          }
           throw new Error(
             'RESTORE_SEARCH_INPUT_NOT_FOUND: Search box tidak muncul saat pemulihan.'
           );
