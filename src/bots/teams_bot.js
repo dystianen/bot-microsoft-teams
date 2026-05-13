@@ -49,6 +49,37 @@ class TeamsBot {
     });
   }
 
+  async humanPaste(locator, text) {
+    if (!text) return;
+    await locator.click({ force: true }).catch(() => {});
+    await this.page.waitForTimeout(100);
+    await locator.fill('');
+    await this.page.waitForTimeout(50);
+    
+    await this.page.evaluate(({ sel, val }) => {
+      const el = document.querySelector(sel);
+      if (el) {
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value'
+        )?.set;
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(el, val);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          el.value = val;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    }, { sel: locator._selector || locator.toString().match(/locator\("(.+)"\)/)?.[1], val: text });
+
+    const current = await locator.inputValue().catch(() => '');
+    if (current !== text) {
+      await locator.fill(text);
+    }
+  }
+
   async randomMouseMove() {
     const { width, height } = this.page.viewportSize() || { width: 1280, height: 720 };
     const x = Math.floor(Math.random() * width);
@@ -537,7 +568,7 @@ class TeamsBot {
         const emailInput = this.getGenericLocator('email');
         await this.waitForVisible(emailInput);
 
-        await this.humanType(emailInput, email.trim());
+        await this.humanPaste(emailInput, email.trim());
         await this.humanDelay(1000, 2000); // Delay ekstra agar Microsoft memproses input
 
         await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
@@ -593,7 +624,7 @@ class TeamsBot {
           .first();
         await this.waitForVisible(passwordInput);
 
-        await this.humanType(passwordInput, password.trim());
+        await this.humanPaste(passwordInput, password.trim());
         await this.humanDelay(800, 1200);
 
         await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
