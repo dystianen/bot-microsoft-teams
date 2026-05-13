@@ -95,17 +95,23 @@ class TeamsBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        // CPU Saver: Relaxing polling interval from 1500ms to 5000ms
-        await this.page.waitForTimeout(5000).catch(() => {
+        // CPU Saver: Relaxing polling interval from 5s to 7s
+        await this.page.waitForTimeout(7000).catch(() => {
           isDone = true;
         });
         if (isDone) break;
 
-        const detectedError = await this.checkForError();
-        if (detectedError) {
-          errorMsg = detectedError;
-          isDone = true;
-          break;
+        // Hanya cek error jika halaman tidak sedang sibuk/loading
+        const spinner = this.page.locator(SPINNER_SELECTOR).first();
+        const isBusy = await spinner.isVisible().catch(() => false);
+        
+        if (!isBusy) {
+          const detectedError = await this.checkForError();
+          if (detectedError) {
+            errorMsg = detectedError;
+            isDone = true;
+            break;
+          }
         }
       }
     };
@@ -188,17 +194,16 @@ class TeamsBot {
         } catch (e) {}
       }
 
-      // 2. Cek marker teks HANYA di Main Frame (Berat, batasi)
+      // 2. Cek marker teks HANYA di Main Frame (Hanya jika selector tidak ketemu)
+      // Gunakan evaluate untuk mencari substring langsung di browser agar lebih ringan daripada textContent()
       try {
-        const mainText = await this.page
-          .locator('body')
-          .textContent()
-          .catch(() => '');
-        if (mainText) {
-          const lowerText = mainText.toLowerCase();
-          const found = markers.find((m) => lowerText.includes(m.toLowerCase()));
-          if (found) return `Marker "${found}" detected.`;
-        }
+        const foundMarker = await this.page.evaluate((mks) => {
+          const bodyText = document.body ? document.body.innerText.toLowerCase() : "";
+          if (!bodyText) return null;
+          return mks.find(m => bodyText.includes(m.toLowerCase()));
+        }, markers);
+
+        if (foundMarker) return `Marker "${foundMarker}" detected.`;
       } catch (e) {}
     } catch (err) {}
     return null;
@@ -507,6 +512,19 @@ class TeamsBot {
         '--disable-gpu',
         '--disable-software-rasterizer',
         '--disable-features=VizDisplayCompositor',
+        '--disable-site-isolation-trials', // Mengurangi penggunaan memory/process (tapi kurang secure, ok buat bot)
+        '--js-flags="--max-old-space-size=256"', // Batasi memory JS agar tidak sering GC spikes
+        '--disable-v8-idle-tasks',
+        '--disable-background-timer-throttling',
+        '--disable-client-side-phishing-detection',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-hang-monitor',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-sync',
+        '--no-first-run',
+        '--no-default-browser-check',
       ],
     });
     this.context = await this.browser.newContext();
@@ -660,7 +678,10 @@ class TeamsBot {
         const loginLoopStart = Date.now();
 
         while (Date.now() - loginLoopStart < 120000) {
-          // 1. Cek Dashboard (prioritas tertinggi — cek setiap iterasi)
+          // Tambahkan jeda di awal loop agar tidak memakan CPU (Throttling)
+          await this.page.waitForTimeout(2000);
+
+          // 1. Cek Dashboard (prioritas tertinggi)
           if (await dashboardMarker.isVisible().catch(() => false)) {
             console.log('[SUCCESS] Dashboard detected!');
             await this.humanDelay(1000, 1500);
