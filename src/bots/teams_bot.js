@@ -571,6 +571,13 @@ class TeamsBot {
         await this.humanPaste(emailInput, email.trim());
         await this.humanDelay(1000, 2000); // Delay ekstra agar Microsoft memproses input
 
+        // Verifikasi: Pastikan email terisi sebelum klik Next
+        await this.page.waitForFunction(
+          (el) => el && el.value && el.value.length > 0,
+          await emailInput.elementHandle(),
+          { timeout: 5000 }
+        ).catch(() => {});
+
         await this.clickButtonWithPossibleNames(['Next', 'Selanjutnya', 'Berikutnya', 'Suivant']);
 
         // ─── PHASE 2: Wait for Password Field or "Choose method" prompt ─────────
@@ -626,6 +633,13 @@ class TeamsBot {
 
         await this.humanPaste(passwordInput, password.trim());
         await this.humanDelay(800, 1200);
+
+        // Verifikasi tambahan: Pastikan password benar-benar terisi di DOM sebelum klik
+        await this.page.waitForFunction(
+          (el) => el && el.value && el.value.length > 0,
+          await passwordInput.elementHandle(),
+          { timeout: 5000 }
+        ).catch(() => console.warn("[WARN] Password field verification timeout, proceeding anyway..."));
 
         await this.clickButtonWithPossibleNames(['Sign in', 'Masuk', 'Se connecter']);
 
