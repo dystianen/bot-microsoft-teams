@@ -737,84 +737,149 @@ class TeamsBot {
   }
 
   async _deactivateAllLicenses(email) {
-    await remoteLogger.logStep(email, 6, "📂 Membuka halaman 'Pengguna Aktif' langsung via URL...");
-    await this.page.goto('https://admin.cloud.microsoft/?#/users', {
-      waitUntil: 'domcontentloaded',
-      timeout: HARD_TIMEOUT,
-    });
-    await this.waitForSpinnerGone(200);
-    await this.handlePopups();
+    // ─── Helper: navigate to Active Users page from a clean state ─────────────
+    // Dipakai saat pertama masuk DAN saat perlu retry dari awal.
+    const navigateToActiveUsers = async () => {
+      await this.page.goto('https://admin.cloud.microsoft/?#/users', {
+        waitUntil: 'domcontentloaded',
+        timeout: HARD_TIMEOUT,
+      });
 
+      // FIX 1: Jangan pakai delay angka kecil (200ms) setelah goto.
+      // SPA Microsoft butuh waktu untuk mount komponen setelah DOMContentLoaded.
+      // Tunggu sampai spinner benar-benar hilang dulu (tanpa batas minimum artifisial).
+      await this.waitForSpinnerGone();
+      await this.handlePopups();
+
+      // FIX 2: Setelah goto + spinnerGone, tunggu elemen "anchor" yang membuktikan
+      // halaman sudah fully mounted — bukan hanya cek isVisible sesaat.
+      // Kita tunggu searchInput dengan waitFor state:'visible', bukan isVisible(timeout).
+      // waitFor bersifat polling hingga stabil, sedangkan isVisible hanya snapshot sekali.
+      const searchInput = this.page.locator(SELECTORS.searchInput).first();
+      await searchInput.waitFor({ state: 'visible', timeout: 30000 });
+
+      // Tambahan: pastikan input benar-benar interaktable (tidak disabled/readonly)
+      await this.page
+        .waitForFunction(
+          (sel) => {
+            const el = document.querySelector(sel);
+            return el && !el.disabled && !el.readOnly && el.offsetParent !== null;
+          },
+          SELECTORS.searchInput,
+          { timeout: 10000 }
+        )
+        .catch(() => {
+          // Non-fatal: lanjut saja jika waitForFunction timeout,
+          // mungkin selector SELECTORS.searchInput bukan CSS sederhana
+        });
+    };
+
+    // ─── Helper: cari dan buka profil user ────────────────────────────────────
+    const searchAndOpenUser = async () => {
+      const searchInput = this.page.locator(SELECTORS.searchInput).first();
+
+      // Clear dan isi search field
+      await searchInput.clear();
+      await this.humanDelay(200, 400);
+      await searchInput.fill(email);
+
+      // FIX 3: Setelah fill, tunggu sebentar agar debounce search (jika ada) tidak terpotong
+      await this.humanDelay(400, 600);
+      await this.page.keyboard.press('Enter');
+
+      // FIX 4: Setelah Enter, jangan langsung cek userRow.
+      // Tunggu spinner loading hasil search hilang terlebih dahulu.
+      await this.waitForSpinnerGone(1500);
+
+      // FIX 5: Gunakan waitFor state:'visible' untuk userRow, bukan hanya waitForVisible
+      // yang bisa resolve terlalu cepat jika implementasinya berbasis isVisible snapshot.
+      const userRow = this.page.locator(SELECTORS.userRow).first();
+      await userRow.waitFor({ state: 'visible', timeout: 20000 });
+
+      // Verifikasi hasil search sesuai — antisipasi kasus "no results" / salah user
+      const nameFound = await userRow.textContent().catch(() => '');
+      if (!nameFound || nameFound.trim() === '') {
+        throw new Error(`USER_NOT_FOUND: Baris hasil search kosong untuk ${email}.`);
+      }
+
+      console.log(`[INFO] Clicking display name: "${nameFound.trim()}" (Found for ${email})`);
+      await userRow.click();
+
+      // FIX 6: Setelah klik userRow, tunggu panel/flyout terbuka — jangan pakai delay tetap.
+      // Tunggu sampai licensesTab muncul sebagai bukti panel sudah terbuka.
+      const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
+      await licensesTab.waitFor({ state: 'visible', timeout: 20000 });
+
+      return licensesTab;
+    };
+
+    // ─── Helper: buka tab Licenses ────────────────────────────────────────────
+    const openLicensesTab = async (licensesTab) => {
+      await licensesTab.click();
+
+      // FIX 7: Setelah klik tab, tunggu content tab licenses muncul (checkbox pertama)
+      // sebelum lanjut — bukan pakai waitForSpinnerGone(500) yang terlalu singkat.
+      const firstCheckbox = this.page.locator('input[type="checkbox"]').first();
+      await firstCheckbox.waitFor({ state: 'visible', timeout: 20000 });
+      await this.waitForSpinnerGone();
+    };
+
+    // ─── PHASE 1: Navigasi ke Active Users ────────────────────────────────────
+    await remoteLogger.logStep(email, 6, "📂 Membuka halaman 'Pengguna Aktif' langsung via URL...");
+    await navigateToActiveUsers();
+
+    // ─── PHASE 2: Search user dengan retry yang benar ─────────────────────────
     await remoteLogger.logStep(email, 8, `🔍 Mencari akun pengguna: ${email}...`);
 
-    let searchSuccess = false;
+    let licensesTab = null;
+
     for (let searchAttempt = 1; searchAttempt <= 3; searchAttempt++) {
       try {
-        const searchInput = this.page.locator(SELECTORS.searchInput).first();
+        licensesTab = await searchAndOpenUser();
+        break; // Berhasil, keluar dari loop
+      } catch (err) {
+        console.warn(`[WARN] Search attempt ${searchAttempt}/3 failed: ${err.message}`);
 
-        await this.waitForSpinnerGone();
-        const isVisible = await searchInput.isVisible({ timeout: 15000 }).catch(() => false);
-
-        if (!isVisible) {
-          console.warn(`[RETRY] Search input not found (Attempt ${searchAttempt}/3).`);
-
-          if (searchAttempt < 3) {
-            console.warn('[RETRY] Search box tidak muncul, melakukan refresh halaman...');
-            await this.page.reload({ waitUntil: 'domcontentloaded' });
-            await this.waitForSpinnerGone(2000);
-            await this.handlePopups();
-            continue;
-          }
-
+        if (searchAttempt >= 3) {
           throw new Error(
-            'SEARCH_INPUT_NOT_FOUND: Search box tidak muncul di halaman Active Users.'
+            `SEARCH_ACCOUNT_FAILED: Gagal menemukan user "${email}" setelah 3 percobaan. Error terakhir: ${err.message}`
           );
         }
 
-        await searchInput.clear();
-        await searchInput.fill(email);
-        await this.page.keyboard.press('Enter');
-        await this.waitForSpinnerGone(2000);
+        // FIX 8: Retry search yang benar — reload halaman secara penuh,
+        // lalu tunggu stabilitas sebelum re-coba search.
+        // Sebelumnya: reload langsung lanjut ke continue tanpa verifikasi page stabil.
+        console.warn(`[RETRY] Melakukan reload halaman dan retry search (${searchAttempt}/3)...`);
+        await this.page.reload({ waitUntil: 'domcontentloaded' });
 
-        const userRow = this.page.locator(SELECTORS.userRow).first();
-        await this.waitForVisible(userRow);
-        const nameFound = await userRow.textContent();
-        console.log(`[INFO] Clicking display name: "${nameFound?.trim()}" (Found for ${email})`);
-        await userRow.click();
-        await this.humanDelay(800, 1500);
+        // Tunggu stabil — bukan delay tetap, tapi tunggu elemen anchor muncul
+        await this.waitForSpinnerGone();
+        await this.handlePopups();
 
-        searchSuccess = true;
-        break;
-      } catch (err) {
-        console.warn(`[WARN] Search attempt ${searchAttempt} failed: ${err.message}`);
-        if (searchAttempt === 3) throw err;
-        await this.page.waitForTimeout(3000);
+        const searchInput = this.page.locator(SELECTORS.searchInput).first();
+        try {
+          await searchInput.waitFor({ state: 'visible', timeout: 25000 });
+        } catch {
+          // Jika setelah reload searchInput masih tidak muncul, coba navigasi ulang
+          console.warn('[RETRY] Search input masih tidak muncul setelah reload, navigasi ulang...');
+          await navigateToActiveUsers();
+        }
+
+        await this.humanDelay(1000, 2000); // Jeda antar attempt
       }
     }
 
-    if (!searchSuccess) throw new Error('SEARCH_ACCOUNT_FAILED: Gagal mencari user.');
-
+    // ─── PHASE 3: Buka tab Licenses ───────────────────────────────────────────
     await remoteLogger.logStep(email, 9, "📋 Membuka tab 'Lisensi dan Aplikasi'...");
-    const licensesTab = this.page.locator(SELECTORS.licensesTab).first();
-    await this.waitForVisible(licensesTab);
-    await licensesTab.click();
-    await this.waitForSpinnerGone(500);
+    await openLicensesTab(licensesTab);
 
-    // Step 10: uncheck all checked checkboxes
+    // ─── PHASE 4: Uncheck semua lisensi ───────────────────────────────────────
     await remoteLogger.logStep(email, 10, '🔲 Menonaktifkan semua lisensi yang sedang aktif...');
+
     try {
-      await this.waitForSpinnerGone(200);
-      const checkboxSelector = 'input[type="checkbox"]';
-
-      await this.page
-        .locator(checkboxSelector)
-        .first()
-        .waitFor({ state: 'visible', timeout: 15000 })
-        .catch(() => {});
-
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          await this.waitForSpinnerGone(200);
+          await this.waitForSpinnerGone();
 
           // Cek error "Something went wrong" dari Microsoft
           const pageErr = await this.checkForError();
@@ -825,27 +890,24 @@ class TeamsBot {
               pageErr.toLowerCase().includes("une erreur s'est produite") ||
               pageErr.toLowerCase().includes('happened'))
           ) {
-            console.warn(`[RETRY] Terdeteksi "${pageErr}" saat uncheck. Reloading...`);
+            console.warn(
+              `[RETRY] Terdeteksi "${pageErr}" saat uncheck. Memulai ulang dari search...`
+            );
+
+            // FIX 9: Saat error di step uncheck, jangan hanya reload — kita perlu
+            // kembali ke search dan buka user lagi karena state panel mungkin hilang.
             await this.page.reload({ waitUntil: 'domcontentloaded' });
-            await this.page.waitForTimeout(5000);
+            await this.waitForSpinnerGone();
             await this.handlePopups();
 
-            const freshLicensesTab = this.page.locator(SELECTORS.licensesTab).first();
-            if (!(await freshLicensesTab.isVisible().catch(() => false))) {
-              const searchInput = this.page.locator(SELECTORS.searchInput).first();
-              await this.waitForVisible(searchInput);
-              await searchInput.fill(email);
-              await this.page.keyboard.press('Enter');
-              await this.waitForSpinnerGone(2000);
-              await this.page.locator(SELECTORS.userRow).first().click();
-              await this.humanDelay(800, 1500);
-            }
-            await freshLicensesTab.click();
-            await this.waitForSpinnerGone(500);
+            const searchInput = this.page.locator(SELECTORS.searchInput).first();
+            await searchInput.waitFor({ state: 'visible', timeout: 25000 });
+
+            licensesTab = await searchAndOpenUser();
+            await openLicensesTab(licensesTab);
             continue;
           }
 
-          // === OPTIMIZED UNCHECK ===
           // Ambil semua checkbox yang checked sekaligus
           const checkedBoxes = await this.page.locator('input[type="checkbox"]:checked').all();
 
@@ -864,7 +926,10 @@ class TeamsBot {
           // Fallback ke sequential dengan delay minimal jika portal re-render DOM
           try {
             await Promise.all(checkedBoxes.map((cb) => cb.click({ force: true })));
-            await this.page.waitForTimeout(300); // single settle delay
+
+            // FIX 10: Ganti waitForTimeout(300) dengan waitForSpinnerGone setelah mass-click
+            // agar kita tahu DOM sudah settle sebelum melakukan verifikasi count.
+            await this.waitForSpinnerGone();
           } catch (parallelErr) {
             console.warn(
               `[WARN] Parallel uncheck failed (${parallelErr.message}), falling back to sequential...`
@@ -873,15 +938,14 @@ class TeamsBot {
               try {
                 if (await cb.isChecked().catch(() => false)) {
                   await cb.click({ force: true });
-                  await this.page.waitForTimeout(80); // minimal delay
+                  await this.page.waitForTimeout(120);
                 }
               } catch (cbErr) {
                 console.warn(`[WARN] Skipping checkbox that errored: ${cbErr.message}`);
               }
             }
-            await this.page.waitForTimeout(300);
+            await this.waitForSpinnerGone();
           }
-          // === END OPTIMIZED UNCHECK ===
 
           // Verifikasi
           const remaining = await this.page.locator('input[type="checkbox"]:checked').count();
@@ -923,9 +987,24 @@ class TeamsBot {
 
     await this.humanDelay(1000, 2000);
 
+    // ─── PHASE 5: Save ─────────────────────────────────────────────────────────
     await remoteLogger.logStep(email, 11, '💾 Menyimpan perubahan lisensi (nonaktifkan semua)...');
     const saveBtn = this.page.locator(SELECTORS.saveBtn).first();
-    await this.waitForVisible(saveBtn);
+
+    // FIX 11: Tunggu saveBtn stabil sebelum klik — setelah mass-uncheck
+    // tombol save kadang masih disabled/animating selama beberapa ratus ms.
+    await saveBtn.waitFor({ state: 'visible', timeout: 15000 });
+    await this.page
+      .waitForFunction(
+        (sel) => {
+          const el = document.querySelector(sel);
+          return el && !el.disabled;
+        },
+        SELECTORS.saveBtn,
+        { timeout: 10000 }
+      )
+      .catch(() => {}); // Non-fatal, lanjut klik meski waitForFunction timeout
+
     await saveBtn.click();
     await this.waitForSpinnerGone(500);
     console.log('[INFO] Waiting for license save to settle...');
