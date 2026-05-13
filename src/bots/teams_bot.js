@@ -56,8 +56,8 @@ class TeamsBot {
     await locator.fill('');
     await this.page.waitForTimeout(50);
     
-    await this.page.evaluate(({ sel, val }) => {
-      const el = document.querySelector(sel);
+    // Gunakan locator.evaluate agar elemen di-passing langsung oleh Playwright
+    await locator.evaluate((el, val) => {
       if (el) {
         const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
           window.HTMLInputElement.prototype,
@@ -72,7 +72,7 @@ class TeamsBot {
           el.dispatchEvent(new Event('input', { bubbles: true }));
         }
       }
-    }, { sel: locator._selector || locator.toString().match(/locator\("(.+)"\)/)?.[1], val: text });
+    }, text);
 
     const current = await locator.inputValue().catch(() => '');
     if (current !== text) {
