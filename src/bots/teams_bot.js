@@ -1562,14 +1562,13 @@ class TeamsBot {
 
     // 5. Review and finish
     await remoteLogger.logStep(email, 22.5, '🏁 Menyelesaikan pembuatan user...');
-    const finishBtn = this.page
-      .locator(
-        'button:has-text("Finish adding"), button:has-text("Selesai menambahkan"), button:has-text("Terminer l\'ajout")'
-      )
-      .first();
-    await this.waitForVisible(finishBtn);
-    console.log('[STEP 5] Clicking "Finish adding" button...');
-    await finishBtn.click();
+    await this.clickButtonWithPossibleNames([
+      'Finish adding',
+      'Selesai menambahkan',
+      "Terminer l'ajout",
+      'Fin de l’ajout',
+      "Fin de l'ajout",
+    ]);
     await this.waitForSpinnerGone(200);
 
     // 6. Log result
