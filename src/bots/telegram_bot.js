@@ -224,6 +224,7 @@ function initializeBotHandlers(bot) {
         success: [],
         failed: [],
       };
+      const pendingPromises = new Set();
 
       const processAccount = async (accountData, currentIdx) => {
         // Non-blocking status message
@@ -364,13 +365,10 @@ function initializeBotHandlers(bot) {
           ? `🛑 <b>Batch Queue Stopped Manually</b>\n`
           : `🏁 <b>Batch Queue Finished - EXPLO</b>\n`;
 
-        summaryMsg += `🔢 Total Queue: <code>${originalTotal}</code>\n`;
+        const totalProcessed = queueResults.all.length;
+        summaryMsg += `🔢 Total Processed: <code>${totalProcessed}</code>\n`;
         summaryMsg += `✅ Success: <code>${queueResults.success.length}</code>\n`;
         summaryMsg += `❌ Failed: <code>${queueResults.failed.length}</code>\n`;
-
-        if (processedCount < originalTotal) {
-          summaryMsg += `🛑 Stopped: <code>${originalTotal - processedCount}</code> accounts skipped\n`;
-        }
         summaryMsg += `\n`;
 
         if (queueResults.success.length > 0) {
