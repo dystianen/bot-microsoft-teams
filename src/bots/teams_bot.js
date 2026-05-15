@@ -129,8 +129,6 @@ class TeamsBot {
 
   async checkForError() {
     try {
-      // CPU Saver: Most errors appear in the main frame.
-      // We check main frame first with a single evaluation.
       const errorSelectors = [
         '[data-automation-id="error-message"]',
         '[id*="error" i]',
@@ -138,6 +136,7 @@ class TeamsBot {
         '#passwordError',
         '#usernameError',
       ];
+
       const markers = [
         'something went wrong',
         'something happened',
@@ -182,30 +181,30 @@ class TeamsBot {
         'kami mengalami masalah',
       ];
 
-      const result = await this.page.evaluate(
-        (config) => {
-          // Check selectors
-          for (const sel of config.selectors) {
-            const el = document.querySelector(sel);
-            if (el && el.offsetHeight > 0) {
-              const txt = el.textContent.trim();
-              if (txt && txt.length < 500) return { type: 'selector', msg: txt };
+      // 1. Cek selector error di SEMUA frame (Cepat & Spesifik)
+      for (const frame of this.page.frames()) {
+        try {
+          for (const selector of errorSelectors) {
+            const el = frame.locator(selector).first();
+            if (await el.isVisible({ timeout: 200 }).catch(() => false)) {
+              const msg = (await el.textContent().catch(() => '')).trim();
+              if (msg && msg.length < 500) return `Field Error: ${msg}`;
             }
           }
-          // Check text markers
-          const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
-          const found = config.markers.find((m) => bodyText.includes(m.toLowerCase()));
-          if (found) return { type: 'marker', msg: found };
-          return null;
-        },
-        { selectors: errorSelectors, markers }
-      );
-
-      if (result) {
-        return result.type === 'selector'
-          ? `Field Error: ${result.msg}`
-          : `Marker "${result.msg}" detected.`;
+        } catch (e) {}
       }
+
+      // 2. Cek marker teks HANYA di Main Frame (Hanya jika selector tidak ketemu)
+      // Gunakan evaluate untuk mencari substring langsung di browser agar lebih ringan daripada textContent()
+      try {
+        const foundMarker = await this.page.evaluate((mks) => {
+          const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
+          if (!bodyText) return null;
+          return mks.find((m) => bodyText.includes(m.toLowerCase()));
+        }, markers);
+
+        if (foundMarker) return `Marker "${foundMarker}" detected.`;
+      } catch (e) {}
     } catch (err) {}
     return null;
   }
@@ -241,86 +240,238 @@ class TeamsBot {
     while (Date.now() - startTime < timeout) {
       await this.waitForSpinnerGone();
 
-      // CPU Saver: Only check Main Frame and direct subframes first
-      const frames = this.page.frames();
-      for (let i = 0; i < Math.min(frames.length, 3); i++) {
-        const frame = frames[i];
+      // 1. Coba klik di Main Page & Semua Frames menggunakan JavaScript Evaluation
+      for (const frame of this.page.frames()) {
         try {
           const found = await frame.evaluate((kws) => {
-            const btns = Array.from(
-              document.querySelectorAll('button, [role="button"], #idSIButton9')
-            );
-            const el = btns.find((b) => {
-              const txt = (b.textContent || b.value || b.getAttribute('aria-label') || '')
-                .toLowerCase()
-                .trim();
+            const candidates = [
+              ...document.querySelectorAll(
+                'button, [role="button"], a[role="button"], input[type="button"], input[type="submit"], #idSIButton9'
+              ),
+            ];
+            const el = candidates.find((b) => {
+              const text = (b.textContent || b.value || b.getAttribute('aria-label') || '')
+                .trim()
+                .toLowerCase();
               const id = (b.id || '').toLowerCase();
-              if (id === 'idsibutton9') return true;
-              return kws.some((kw) => txt.includes(kw));
+              const isDisabled =
+                b.disabled ||
+                b.getAttribute('aria-disabled') === 'true' ||
+                b.classList.contains('disabled') ||
+                b.classList.contains('is-disabled');
+
+              if (isDisabled) return false;
+
+              // Priority 1: Direct ID Match for Microsoft buttons
+              if (
+                id === 'idsibutton9' &&
+                kws.some((k) =>
+                  [
+                    'sign in',
+                    'masuk',
+                    'se connecter',
+                    'next',
+                    'selanjutnya',
+                    'berikutnya',
+                    'suivant',
+                    'yes',
+                    'ya',
+                    'oui',
+                  ].includes(k)
+                )
+              ) {
+                return true;
+              }
+
+              // Priority 2: Text Match
+              if (!text || text.length >= 60) return false;
+              return kws.some((kw) => {
+                const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+                return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+              });
             });
-            if (el && el.offsetHeight > 0) {
-              el.click();
-              return true;
-            }
-            return false;
+            if (!el) return null;
+            el.click();
+            return (el.textContent || el.value || el.id || 'button').trim();
           }, keywords);
 
-          if (found) return true;
+          if (found) {
+            console.log(`[INFO] Clicked: "${found}" (eval, in frame: ${frame.url()})`);
+            return true;
+          }
         } catch (e) {}
       }
 
-      await this.page.waitForTimeout(2000); // Relaxed from 1000ms to 2000ms
+      // 2. Fallback: Playwright native click
+      const pattern = new RegExp(
+        names
+          .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*'))
+          .join('|'),
+        'i'
+      );
+
+      for (const frame of this.page.frames()) {
+        try {
+          // Special check for idSIButton9 via Playwright
+          if (
+            keywords.some((k) =>
+              [
+                'sign in',
+                'masuk',
+                'se connecter',
+                'next',
+                'selanjutnya',
+                'berikutnya',
+                'suivant',
+                'yes',
+                'ya',
+                'oui',
+              ].includes(k)
+            )
+          ) {
+            const idBtn = frame.locator('#idSIButton9').first();
+            if (await idBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+              await idBtn.click({ force: true });
+              console.log('[INFO] Clicked: "#idSIButton9" (native)');
+              return true;
+            }
+          }
+
+          const button = frame.getByRole('button', { name: pattern }).first();
+          if (await button.isVisible({ timeout: 500 }).catch(() => false)) {
+            const clickedText = await button
+              .evaluate((el) => (el.textContent || el.value || '').trim())
+              .catch(() => 'unknown');
+            await this.randomMouseMove();
+            await button.click({ timeout: 5000, force: true });
+            console.log(`[INFO] Clicked: "${clickedText}" (native)`);
+            return true;
+          }
+        } catch (e) {}
+      }
+
+      await this.page.waitForTimeout(1000);
     }
+
+    console.error(`[ERROR] Button not found after ${timeout}ms for names:`, names);
     throw new Error(`Button not found: ${names.join(', ')}`);
   }
 
   async handlePopups() {
-    // CPU Saver: Only check popups every 10 seconds unless forced
-    const now = Date.now();
-    if (this._lastPopupCheck && now - this._lastPopupCheck < 10000) return;
-    this._lastPopupCheck = now;
-
     console.log('[INFO] Checking for any popups to dismiss...');
 
+    // === HANDLE CLOSE BUTTON (X) DI POJOK POPUP ===
+    // Prioritas utama: langsung close via X button tanpa perlu isi form/dropdown
     try {
-      // 1. Check for Close Button (X) - Main Frame only for efficiency
       const closeXBtn = this.page
         .locator(
-          'button[aria-label="Close"], button[title="Close"], button[aria-label="Tutup"], button.close'
+          'button[aria-label="Close"], button[aria-label="Fermer"], ' +
+            'button[aria-label="close"], button[aria-label="fermer"], ' +
+            'button[title="Close"], button[title="Fermer"], ' +
+            'button[title="Tutup"], button[aria-label="Tutup"], ' +
+            'button.close, [data-id="close-button"], ' +
+            'button[class*="close" i], button[class*="dismiss" i], ' +
+            'button:has([data-icon-name="Cancel"]), button:has([data-icon-name="ChromeClose"]), ' +
+            'button[aria-label*="ignor" i]'
         )
         .first();
-      if (await closeXBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+
+      if (await closeXBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        console.log('[INFO] Close (X) button detected on popup, clicking...');
         await closeXBtn.click({ force: true });
+        await this.humanDelay(500, 800);
         console.log('[INFO] Popup closed via X button.');
         return;
       }
+    } catch (e) {
+      console.log('[INFO] No close X button found:', e.message);
+    }
+    // === END CLOSE BUTTON ===
 
-      // 2. Optimized evaluation for common "Dismiss" buttons
-      const names = [
-        'Close',
-        'Dismiss',
-        'Maybe later',
-        'Got it',
-        'No thanks',
-        'Tutup',
-        'Lain kali',
-        'Selesai',
-      ];
-      const found = await this.page.evaluate((kws) => {
-        const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-        const target = btns.find((b) => {
-          const txt = (b.textContent || b.getAttribute('aria-label') || '').toLowerCase().trim();
-          return kws.some((kw) => txt === kw.toLowerCase()) && b.offsetHeight > 0;
-        });
-        if (target) {
-          target.click();
-          return target.textContent || 'button';
-        }
-        return null;
-      }, names);
+    const names = [
+      'Close',
+      'Dismiss',
+      'Maybe later',
+      'Got it',
+      'No thanks',
+      'Tutup',
+      'Lain kali',
+      'Selesai',
+      'Fermer',
+      'Ignorer',
+      'Plus tard',
+      'Peut-être plus tard',
+      "J'ai compris",
+      'Terminé',
+      'Non merci',
+      'Envoyer et ignorer',
+      'Send and ignore',
+    ];
+    const keywords = names.map((n) => n.trim().toLowerCase());
 
-      if (found) console.log(`[INFO] Dismissed: ${found}`);
-    } catch (e) {}
+    const dismissed = new Set();
+    let foundSomethingVisible = true;
+    let attempts = 0;
+
+    while (foundSomethingVisible && attempts < 3) {
+      foundSomethingVisible = false;
+      attempts++;
+
+      for (const frame of this.page.frames()) {
+        try {
+          const foundName = await frame.evaluate((kws) => {
+            const escapeRegex = (s) =>
+              s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+
+            const candidates = [
+              ...document.querySelectorAll(
+                'button, [role="button"], a[role="button"], input[type="button"]'
+              ),
+            ];
+            const el = candidates.find((b) => {
+              const textContent = (b.textContent || '').trim().toLowerCase();
+              const ariaLabel = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+              const val = (b.value || '').trim().toLowerCase();
+              const titleMsg = (b.getAttribute('title') || '').trim().toLowerCase();
+
+              const isVisible = !!(b.offsetWidth || b.offsetHeight || b.getClientRects().length);
+              if (!isVisible) return false;
+
+              const isMatch = kws.some((kw) => {
+                const escaped = escapeRegex(kw);
+                const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+                return (
+                  regex.test(textContent) ||
+                  regex.test(ariaLabel) ||
+                  regex.test(val) ||
+                  regex.test(titleMsg)
+                );
+              });
+
+              const btnLength = Math.max(
+                textContent.length,
+                ariaLabel.length,
+                val.length,
+                titleMsg.length
+              );
+              return isMatch && btnLength > 0 && btnLength < 35;
+            });
+
+            if (!el) return null;
+            el.click();
+            return (el.getAttribute('aria-label') || el.textContent || el.value || 'button').trim();
+          }, keywords);
+
+          if (foundName && !dismissed.has(foundName)) {
+            dismissed.add(foundName);
+            console.log(`[INFO] Dismissed popup button: "${foundName}" (Attempt ${attempts})`);
+            await this.humanDelay(1000, 2000);
+            foundSomethingVisible = true;
+            break;
+          }
+        } catch (e) {}
+      }
+    }
   }
 
   getGenericLocator(keyword, elementType = 'input') {
@@ -527,8 +678,8 @@ class TeamsBot {
         const loginLoopStart = Date.now();
 
         while (Date.now() - loginLoopStart < 120000) {
-          // CPU Saver: Relaxing polling interval from 2s to 5s
-          await this.page.waitForTimeout(5000);
+          // Tambahkan jeda di awal loop agar tidak memakan CPU (Throttling)
+          await this.page.waitForTimeout(2000);
 
           // 1. Cek Dashboard (prioritas tertinggi)
           if (await dashboardMarker.isVisible().catch(() => false)) {
