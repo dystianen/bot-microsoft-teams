@@ -115,8 +115,10 @@ function initializeBotHandlers(bot) {
     if (!sessions[chatId]) {
       sessions[chatId] = {
         accounts: [],
+        activeQueue: [], // Initialize early to avoid race conditions
         step: 'IDLE',
         running: false,
+        forceStop: false,
         lastActivity: Date.now(),
       };
     }
@@ -216,8 +218,8 @@ function initializeBotHandlers(bot) {
       let globalIdx = 0;
 
       // Initialize activeQueue with current accounts
-      session.activeQueue = [...session.accounts];
-      session.accounts = []; // Clear for next input
+      session.activeQueue = [...session.activeQueue, ...session.accounts];
+      session.accounts = []; // Clear staging
 
       const queueResults = {
         all: [],
@@ -228,10 +230,7 @@ function initializeBotHandlers(bot) {
 
       const processAccount = async (accountData, currentIdx) => {
         // Non-blocking status message
-        safeSendMessage(
-          chatId,
-          `⏳ [#${currentIdx}] Processing: ${escapeHTML(accountData.email)}`
-        );
+        safeSendMessage(chatId, `⏳ [#${currentIdx}] Processing: ${escapeHTML(accountData.email)}`);
 
         const pairedData = {
           microsoftAccount: accountData,
@@ -324,12 +323,12 @@ function initializeBotHandlers(bot) {
       };
 
       try {
-        while (true) {
+        while (!isShuttingDown) {
+          // 1. Check if we can start a new worker
           if (
-            activeWorkers < maxWorkers &&
-            session.activeQueue.length > 0 &&
             !session.forceStop &&
-            !isShuttingDown
+            activeWorkers < maxWorkers &&
+            session.activeQueue.length > 0
           ) {
             const accountData = session.activeQueue.shift();
             globalIdx++;
@@ -342,16 +341,26 @@ function initializeBotHandlers(bot) {
             });
             pendingPromises.add(promise);
 
+            // Staggered launch delay
             if (session.activeQueue.length > 0 && activeWorkers < maxWorkers) {
               await new Promise((r) => setTimeout(r, 20000));
             }
-          } else if (activeWorkers === 0 && (session.activeQueue.length === 0 || session.forceStop)) {
-            break;
-          } else {
-            await new Promise((r) => setTimeout(r, 1000));
+            continue; // Re-evaluate immediately
           }
+
+          // 2. Check for completion or stop
+          if (activeWorkers === 0) {
+            // Only break if queue is empty OR stop was requested
+            if (session.activeQueue.length === 0 || session.forceStop) {
+              break;
+            }
+          }
+
+          // 3. Wait a bit if we're idling/waiting for workers
+          await new Promise((r) => setTimeout(r, 1000));
         }
 
+        // Wait for any remaining promises to finish before proceeding to summary
         if (pendingPromises.size > 0) {
           await Promise.all(Array.from(pendingPromises));
         }
@@ -445,8 +454,9 @@ function initializeBotHandlers(bot) {
     const chatId = msg.chat.id;
     const session = getSession(chatId);
     session.accounts = [];
+    session.activeQueue = []; // Clear active queue as well
     session.forceStop = true;
-    bot.sendMessage(chatId, '🛑 Stopping queue...');
+    bot.sendMessage(chatId, '🛑 Stopping queue and clearing pending accounts...');
   });
 
   bot.onText(/📜 History/, async (msg) => {
@@ -707,11 +717,7 @@ function initializeBotHandlers(bot) {
         bot.sendMessage(chatId, `Successfully added ${added} accounts to ${target}.`, mainMenu);
         session.step = 'IDLE';
       } else if (lines.length > 0) {
-        bot.sendMessage(
-          chatId,
-          `No new accounts added (duplicates or invalid format).`,
-          mainMenu
-        );
+        bot.sendMessage(chatId, `No new accounts added (duplicates or invalid format).`, mainMenu);
         session.step = 'IDLE';
       }
     } else if (session.step === 'SET_CONCURRENCY') {
