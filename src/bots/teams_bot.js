@@ -854,7 +854,7 @@ class TeamsBot {
       const searchInput = this.page.locator(SELECTORS.searchInput).first();
 
       // Clear dan isi search field via robust humanType
-      await this.humanType(searchInput, email);
+      await this.humanPaste(searchInput, email);
 
       // FIX 3: Setelah fill, tunggu sebentar agar debounce search (jika ada) tidak terpotong
       await this.humanDelay(400, 600);
@@ -1748,13 +1748,24 @@ class TeamsBot {
           continue;
         }
 
-        if (await pickAccountHeader.isVisible().catch(() => false) || await useAnotherAccountBtn.isVisible().catch(() => false)) {
-          console.log("[INFO] 'Pick an account' or 'Use another account' detected, clicking 'Use another account'...");
+        if (
+          (await pickAccountHeader.isVisible().catch(() => false)) ||
+          (await useAnotherAccountBtn.isVisible().catch(() => false))
+        ) {
+          console.log(
+            "[INFO] 'Pick an account' or 'Use another account' detected, clicking 'Use another account'..."
+          );
           if (await useAnotherAccountBtn.isVisible().catch(() => false)) {
             await useAnotherAccountBtn.click();
           } else {
             // Fallback: search for any element containing the text or the common ID
-            await teamsPage.locator('div:has-text("Use another account"), #otherTile, [role="button"]:has-text("Use another account"), #otherTileText').first().click().catch(() => {});
+            await teamsPage
+              .locator(
+                'div:has-text("Use another account"), #otherTile, [role="button"]:has-text("Use another account"), #otherTileText'
+              )
+              .first()
+              .click()
+              .catch(() => {});
           }
           await this.humanDelay(1000, 2000);
           continue;
