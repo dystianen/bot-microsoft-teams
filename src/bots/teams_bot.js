@@ -1543,11 +1543,8 @@ class TeamsBot {
         .first();
       const chatMarker = teamsPage
         .locator(
-          '[data-tid="chat-list-view"], [data-tid="app-bar-navigation-list"], #teams-app-container, [data-test-id="chat-list"], .teams-app-canvas, div:has-text("Chat")'
+          '[data-tid="chat-list-view"], [data-tid="app-bar-navigation-list"], #teams-app-container, [data-test-id="chat-list"], .teams-app-canvas'
         )
-        .first();
-      const teamsErrorMarker = teamsPage
-        .locator("text=/something went wrong|terjadi kesalahan|une erreur s'est produite/i")
         .first();
       const retryErrorMarker = teamsPage
         .locator("text=/run into an issue|we've run into an issue/i")
@@ -1600,9 +1597,14 @@ class TeamsBot {
           continue;
         }
 
-        if (await useAnotherAccountBtn.isVisible().catch(() => false)) {
-          console.log("[INFO] 'Use another account' detected, clicking...");
-          await useAnotherAccountBtn.click();
+        if (await pickAccountHeader.isVisible().catch(() => false) || await useAnotherAccountBtn.isVisible().catch(() => false)) {
+          console.log("[INFO] 'Pick an account' or 'Use another account' detected, clicking 'Use another account'...");
+          if (await useAnotherAccountBtn.isVisible().catch(() => false)) {
+            await useAnotherAccountBtn.click();
+          } else {
+            // Fallback: search for any element containing the text or the common ID
+            await teamsPage.locator('div:has-text("Use another account"), #otherTile, [role="button"]:has-text("Use another account"), #otherTileText').first().click().catch(() => {});
+          }
           await this.humanDelay(1000, 2000);
           continue;
         }
@@ -1632,24 +1634,6 @@ class TeamsBot {
             await yesBtn.click();
             await this.humanDelay(1000, 2000);
           }
-          continue;
-        }
-
-        if (await pickAccountHeader.isVisible().catch(() => false)) {
-          console.log("[INFO] 'Pick an account' detected, selecting user...");
-          const target = teamsPage
-            .locator(`div[role="listitem"]:has-text("${email}"), [data-test-id="${email}"]`)
-            .first();
-          if (await target.isVisible().catch(() => false)) {
-            await target.click();
-          } else {
-            await teamsPage
-              .locator('div[role="listitem"], .tile-container')
-              .first()
-              .click()
-              .catch(() => {});
-          }
-          await teamsPage.waitForTimeout(2000);
           continue;
         }
 
