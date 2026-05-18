@@ -4,6 +4,8 @@ services:
     container_name: microsoft-teams-bot
     env_file: .env
 
+    init: true
+
     network_mode: host
     ipc: host
     shm_size: '2gb'
@@ -20,3 +22,9 @@ services:
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 10G

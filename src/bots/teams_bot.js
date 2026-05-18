@@ -95,13 +95,14 @@ class TeamsBot {
 
     const checkLoop = async () => {
       while (!isDone) {
-        // CPU Saver: Relaxing polling interval from 5s to 7s
-        await this.page.waitForTimeout(7000).catch(() => {
-          isDone = true;
-        });
+        // Pakai kecil-kecil agar responsif saat isDone=true
+        for (let i = 0; i < 7 && !isDone; i++) {
+          await this.page.waitForTimeout(1000).catch(() => {
+            isDone = true;
+          });
+        }
         if (isDone) break;
 
-        // Hanya cek error jika halaman tidak sedang sibuk/loading
         const spinner = this.page.locator(SPINNER_SELECTOR).first();
         const isBusy = await spinner.isVisible().catch(() => false);
 
@@ -116,15 +117,23 @@ class TeamsBot {
       }
     };
 
-    const result = await Promise.race([promise, checkLoop()]).finally(() => {
+    try {
+      const result = await Promise.race([
+        promise.then((r) => {
+          isDone = true;
+          return r;
+        }),
+        checkLoop(),
+      ]);
+
+      if (errorMsg) {
+        throw new Error(`MICROSOFT_ERROR: ${errorMsg}`);
+      }
+
+      return result;
+    } finally {
       isDone = true;
-    });
-
-    if (errorMsg) {
-      throw new Error(`MICROSOFT_ERROR: ${errorMsg}`);
     }
-
-    return result;
   }
 
   async checkForError() {
@@ -181,12 +190,19 @@ class TeamsBot {
         'kami mengalami masalah',
       ];
 
-      // 1. Cek selector error di SEMUA frame (Cepat & Spesifik)
-      for (const frame of this.page.frames()) {
+      // ✅ FIX: Batasi scan ke main frame + max 3 frame (bukan semua frame)
+      const allFrames = this.page.frames();
+      const framesToCheck = [
+        allFrames[0], // main frame selalu dicek
+        ...allFrames.slice(1, 4), // max 3 iframe tambahan
+      ].filter(Boolean);
+
+      // 1. Cek selector error di frame terbatas
+      for (const frame of framesToCheck) {
         try {
           for (const selector of errorSelectors) {
             const el = frame.locator(selector).first();
-            if (await el.isVisible({ timeout: 200 }).catch(() => false)) {
+            if (await el.isVisible({ timeout: 150 }).catch(() => false)) {
               const msg = (await el.textContent().catch(() => '')).trim();
               if (msg && msg.length < 500) return `Field Error: ${msg}`;
             }
@@ -194,8 +210,7 @@ class TeamsBot {
         } catch (e) {}
       }
 
-      // 2. Cek marker teks HANYA di Main Frame (Hanya jika selector tidak ketemu)
-      // Gunakan evaluate untuk mencari substring langsung di browser agar lebih ringan daripada textContent()
+      // 2. Cek marker teks di main frame saja (sudah cukup untuk detect error)
       try {
         const foundMarker = await this.page.evaluate((mks) => {
           const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
@@ -512,19 +527,17 @@ class TeamsBot {
         '--disable-gpu',
         '--disable-software-rasterizer',
         '--disable-features=VizDisplayCompositor',
-        '--disable-site-isolation-trials', // Mengurangi penggunaan memory/process (tapi kurang secure, ok buat bot)
-        '--js-flags="--max-old-space-size=256"', // Batasi memory JS agar tidak sering GC spikes
+        '--disable-site-isolation-trials',
+        '--js-flags=--max-old-space-size=256',
         '--disable-v8-idle-tasks',
-        '--disable-background-timer-throttling',
         '--disable-client-side-phishing-detection',
         '--disable-default-apps',
-        '--disable-extensions',
         '--disable-hang-monitor',
         '--disable-popup-blocking',
         '--disable-prompt-on-repost',
-        '--disable-sync',
-        '--no-first-run',
         '--no-default-browser-check',
+        '--disable-renderer-backgrounding', // ← TAMBAH: kurangi CPU saat tab background
+        '--disable-ipc-flooding-protection', // ← TAMBAH: kurangi throttling IPC
       ],
     });
     this.context = await this.browser.newContext();
@@ -532,12 +545,17 @@ class TeamsBot {
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
 
-    // --- CPU Saver: Aggressive Resource Blocking ---
-    await this.context.route('**/*', (route) => {
+    // ✅ FIX: Route blocking di PAGE level, bukan context
+    // Ini jauh lebih ringan — hanya intercept halaman utama
+    await this._applyRouteBlocking(this.page);
+  }
+
+  // Fungsi baru — pisah dari connect() agar bisa dipanggil ulang di newPage
+  async _applyRouteBlocking(page) {
+    await page.route('**/*', (route) => {
       const url = route.request().url().toLowerCase();
       const type = route.request().resourceType();
 
-      // Daftar keyword domain telemetry/tracking yang berat
       const blockPatterns = [
         'telemetry',
         'analytics',
@@ -561,7 +579,6 @@ class TeamsBot {
         route.continue();
       }
     });
-    // -------------------------------------------------------------
   }
 
   async _loginToAdminCenter(email, password) {
@@ -1642,6 +1659,7 @@ class TeamsBot {
       '🚀 Membuka Microsoft Teams di tab baru untuk aktivasi trial...'
     );
     const teamsPage = await this.context.newPage();
+    await this._applyRouteBlocking(teamsPage);
     try {
       try {
         console.log('[STEP 21] Navigating to Microsoft Teams...');
