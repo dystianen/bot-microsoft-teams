@@ -213,23 +213,25 @@ function initializeBotHandlers(bot) {
     );
 
     const runQueue = async () => {
-      let activeWorkers = 0;
       const maxWorkers = userConf.concurrencyLimit;
       let globalIdx = 0;
+      let activeWorkers = 0;
 
-      // Initialize activeQueue with current accounts
       session.activeQueue = [...session.activeQueue, ...session.accounts];
-      session.accounts = []; // Clear staging
+      session.accounts = [];
 
-      const queueResults = {
-        all: [],
-        success: [],
-        failed: [],
-      };
-      const pendingPromises = new Set();
+      const queueResults = { all: [], success: [], failed: [] };
 
-      const processAccount = async (accountData, currentIdx) => {
-        // Non-blocking status message
+      // Semaphore sederhana — tidak perlu library
+      const processAccount = async (accountData, currentIdx, staggerMs) => {
+        // Stagger di dalam worker, bukan di main loop
+        // Worker pertama (staggerMs=0) langsung jalan
+        if (staggerMs > 0) {
+          await new Promise((r) => setTimeout(r, staggerMs));
+        }
+
+        if (session.forceStop) return; // Cek lagi setelah stagger selesai
+
         safeSendMessage(chatId, `⏳ [#${currentIdx}] Processing: ${escapeHTML(accountData.email)}`);
 
         const pairedData = {
@@ -250,7 +252,7 @@ function initializeBotHandlers(bot) {
             status: result.status,
             log: result.log,
           });
-          await historyRecord.save().catch((e) => {});
+          await historyRecord.save().catch(() => {});
 
           if (result.status === 'SUCCESS') {
             const resItem = {
@@ -262,8 +264,6 @@ function initializeBotHandlers(bot) {
             queueResults.success.push(resItem);
             queueResults.all.push(resItem);
 
-            let message = `✅ <b>Success [#${currentIdx}]</b>\n`;
-            // Calculate WIB (UTC+7) manually and format without the 'true' flag
             const timeWib = new Date()
               .toLocaleString('en-GB', {
                 timeZone: 'Asia/Jakarta',
@@ -275,6 +275,8 @@ function initializeBotHandlers(bot) {
                 hour12: false,
               })
               .replace(',', '');
+
+            let message = `✅ <b>Success [#${currentIdx}]</b>\n`;
             message += `Time: <code>${timeWib}</code>\n`;
             message += `Email: <code>${escapeHTML(accountData.email)}</code>\n`;
             await safeSendMessage(chatId, message, { parse_mode: 'HTML' });
@@ -305,145 +307,135 @@ function initializeBotHandlers(bot) {
           queueResults.all.push(resItem);
 
           await safeSendMessage(chatId, `❌ Error: ${escapeHTML(err.message)}`);
-          const failRecord = new AccountHistory({
+          await new AccountHistory({
             email: accountData.email,
             password: accountData.password,
             telegram_id: chatId.toString(),
             status: 'FAILED',
             log: err.message,
-          });
-          await failRecord.save().catch(() => {});
+          })
+            .save()
+            .catch(() => {});
         } finally {
           activeAccountsCount--;
+          activeWorkers--;
           if (isShuttingDown && activeAccountsCount === 0) {
-            console.log('[Graceful Shutdown] Last active task finished. Exiting process.');
+            console.log('[Graceful Shutdown] Last active task finished. Exiting.');
             process.exit(0);
           }
         }
       };
 
-      try {
-        while (!isShuttingDown) {
-          // 1. Check if we can start a new worker
-          if (
-            !session.forceStop &&
-            activeWorkers < maxWorkers &&
-            session.activeQueue.length > 0
-          ) {
-            const accountData = session.activeQueue.shift();
-            globalIdx++;
-            const currentIdx = globalIdx;
+      // ─── Main dispatcher — event-driven, bukan polling ───────────────────────
+      // Pakai Promise-based dispatch: setiap slot kosong langsung diisi
+      const dispatch = () => {
+        while (
+          !isShuttingDown &&
+          !session.forceStop &&
+          activeWorkers < maxWorkers &&
+          session.activeQueue.length > 0
+        ) {
+          const accountData = session.activeQueue.shift();
+          globalIdx++;
+          const currentIdx = globalIdx;
 
-            activeWorkers++;
-            const promise = processAccount(accountData, currentIdx).finally(() => {
-              activeWorkers--;
-              pendingPromises.delete(promise);
-            });
-            pendingPromises.add(promise);
+          // Stagger: worker ke-N dapat delay N*20s, worker pertama langsung
+          // Jadi worker 1 jalan di t=0, worker 2 di t=20s, dst
+          // tapi loop ini tidak diblokir — semua langsung di-spawn
+          const staggerMs = activeWorkers * 20000;
+          activeWorkers++;
 
-            // Staggered launch delay
-            if (session.activeQueue.length > 0 && activeWorkers < maxWorkers) {
-              await new Promise((r) => setTimeout(r, 20000));
-            }
-            continue; // Re-evaluate immediately
-          }
-
-          // 2. Check for completion or stop
-          if (activeWorkers === 0) {
-            // Only break if queue is empty OR stop was requested
-            if (session.activeQueue.length === 0 || session.forceStop) {
-              break;
-            }
-          }
-
-          // 3. Wait a bit if we're idling/waiting for workers
-          await new Promise((r) => setTimeout(r, 1000));
+          processAccount(accountData, currentIdx, staggerMs).then(() => {
+            // Saat worker selesai, coba dispatch akun berikutnya
+            // Ini yang bikin event-driven — tidak perlu polling
+            dispatch();
+          });
         }
+      };
 
-        // Wait for any remaining promises to finish before proceeding to summary
-        if (pendingPromises.size > 0) {
-          await Promise.all(Array.from(pendingPromises));
-        }
-      } catch (err) {
-        console.error('[Queue Error]', err);
-        await safeSendMessage(chatId, `⚠️ Queue error: ${escapeHTML(err.message)}`);
-      } finally {
-        session.running = false;
-        const processedCount = queueResults.success.length + queueResults.failed.length;
-        let summaryMsg = session.forceStop
-          ? `🛑 <b>Batch Queue Stopped Manually</b>\n`
-          : `🏁 <b>Batch Queue Finished - EXPLO</b>\n`;
+      // Kick off
+      dispatch();
 
-        const totalProcessed = queueResults.all.length;
-        summaryMsg += `🔢 Total Processed: <code>${totalProcessed}</code>\n`;
-        summaryMsg += `✅ Success: <code>${queueResults.success.length}</code>\n`;
-        summaryMsg += `❌ Failed: <code>${queueResults.failed.length}</code>\n`;
+      // Tunggu semua worker selesai — tanpa polling loop
+      await new Promise((resolve) => {
+        const checkDone = setInterval(() => {
+          const isDone =
+            isShuttingDown ||
+            session.forceStop ||
+            (activeWorkers === 0 && session.activeQueue.length === 0);
+
+          if (isDone) {
+            clearInterval(checkDone);
+            resolve();
+          }
+        }, 500); // 500ms interval — jauh lebih ringan dari 1000ms loop sebelumnya
+      });
+
+      // ─── Summary (sama seperti sebelumnya) ───────────────────────────────────
+      session.running = false;
+
+      let summaryMsg = session.forceStop
+        ? `🛑 <b>Batch Queue Stopped Manually</b>\n`
+        : `🏁 <b>Batch Queue Finished - EXPLO</b>\n`;
+
+      summaryMsg += `🔢 Total Processed: <code>${queueResults.all.length}</code>\n`;
+      summaryMsg += `✅ Success: <code>${queueResults.success.length}</code>\n`;
+      summaryMsg += `❌ Failed: <code>${queueResults.failed.length}</code>\n\n`;
+
+      if (queueResults.success.length > 0) {
+        summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
+        [...queueResults.success].reverse().forEach((r, i) => {
+          const timeStr = r.finishedAt.toLocaleString('en-GB', {
+            timeZone: 'Asia/Jakarta',
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          });
+          const [datePart, timePart] = timeStr.split(', ');
+          const [d, m] = datePart.split('/');
+          summaryMsg += `${i + 1}. ${d}/${m}, ${timePart}\n`;
+          summaryMsg += `- <code>${escapeHTML(r.email)}</code>\n`;
+          summaryMsg += `- <code>${escapeHTML(r.password)}</code>\n`;
+          summaryMsg += `────────────────\n`;
+        });
         summaryMsg += `\n`;
+      }
 
-        if (queueResults.success.length > 0) {
-          summaryMsg += `🟢 <b>SUCCESS LIST:</b>\n`;
-          const items = [...queueResults.success].reverse();
-          items.forEach((r, i) => {
-            const timeStr = r.finishedAt.toLocaleString('en-GB', {
-              timeZone: 'Asia/Jakarta',
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            });
-            const [datePart, timePart] = timeStr.split(', ');
-            const [d, m] = datePart.split('/');
-            const shortTime = `${d}/${m}, ${timePart}`;
-
-            summaryMsg += `${i + 1}. ${shortTime}\n`;
-            summaryMsg += `- <code>${escapeHTML(r.email)}</code>\n`;
-            summaryMsg += `- <code>${escapeHTML(r.password)}</code>\n`;
-            summaryMsg += `────────────────\n`;
+      if (queueResults.failed.length > 0) {
+        summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
+        [...queueResults.failed].reverse().forEach((r, i) => {
+          const timeStr = r.finishedAt.toLocaleString('en-GB', {
+            timeZone: 'Asia/Jakarta',
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
           });
-          summaryMsg += `\n`;
-        }
+          const [datePart, timePart] = timeStr.split(', ');
+          const [d, m] = datePart.split('/');
+          summaryMsg += `${i + 1}. ${d}/${m}, ${timePart}\n`;
+          summaryMsg += `- <code>${escapeHTML(r.email)}</code>\n`;
+          summaryMsg += `- <code>${escapeHTML(r.password)}</code>\n`;
+          summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || 'No log')}</i>\n`;
+          summaryMsg += `────────────────\n`;
+        });
+      }
 
-        if (queueResults.failed.length > 0) {
-          summaryMsg += `🔴 <b>FAILED LIST:</b>\n`;
-          const items = [...queueResults.failed].reverse();
-          items.forEach((r, i) => {
-            const timeStr = r.finishedAt.toLocaleString('en-GB', {
-              timeZone: 'Asia/Jakarta',
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            });
-            const [datePart, timePart] = timeStr.split(', ');
-            const [d, m] = datePart.split('/');
-            const shortTime = `${d}/${m}, ${timePart}`;
+      const isManual = session.forceStop;
+      if (isManual) session.forceStop = false;
 
-            summaryMsg += `${i + 1}. ${shortTime}\n`;
-            summaryMsg += `- <code>${escapeHTML(r.email)}</code>\n`;
-            summaryMsg += `- <code>${escapeHTML(r.password)}</code>\n`;
-            summaryMsg += `⚠️ Log: <i>${escapeHTML(r.log || 'No log')}</i>\n`;
-            summaryMsg += `────────────────\n`;
-          });
-        }
+      await remoteLogger.send(summaryMsg);
+      await remoteLogger.reportSystemStatus(isManual ? '(Queue Stopped)' : '(Queue Finished)');
 
-        const isManual = session.forceStop;
-        if (isManual) session.forceStop = false;
-
-        // Send summary to remoteLogger
-        await remoteLogger.send(summaryMsg);
-        await remoteLogger.reportSystemStatus(isManual ? '(Queue Stopped)' : '(Queue Finished)');
-
-        // Also send detailed report to user DM directly (chunked)
-        const CHUNK_SIZE = 4000;
-        for (let i = 0; i < summaryMsg.length; i += CHUNK_SIZE) {
-          const chunk = summaryMsg.substring(i, i + CHUNK_SIZE);
-          await safeSendMessage(chatId, chunk, {
-            parse_mode: 'HTML',
-            reply_markup: mainMenu,
-          });
-        }
+      const CHUNK_SIZE = 4000;
+      for (let i = 0; i < summaryMsg.length; i += CHUNK_SIZE) {
+        await safeSendMessage(chatId, summaryMsg.substring(i, i + CHUNK_SIZE), {
+          parse_mode: 'HTML',
+          reply_markup: mainMenu,
+        });
       }
     };
 
