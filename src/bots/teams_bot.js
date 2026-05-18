@@ -786,7 +786,34 @@ class TeamsBot {
             await skipBtn
               .click({ timeout: 5000 })
               .catch(() => console.warn("[WARN] 'Skip for now' blocked."));
-            await this.humanDelay(1000, 1500);
+            await this.humanDelay(1500, 2000);
+
+            // Cek apakah muncul popup feedback MFA "Let us know why you're skipping MFA"
+            const feedbackPopup = this.page
+              .locator('text="Let us know why", text="skipping MFA"')
+              .first();
+            if (await feedbackPopup.isVisible({ timeout: 3000 }).catch(() => false)) {
+              console.log('[INFO] MFA Feedback popup detected. Closing it...');
+              // Coba tutup dengan tombol Escape terlebih dahulu
+              await this.page.keyboard.press('Escape');
+              await this.page.waitForTimeout(500);
+
+              // Jika masih terbuka, cari dan klik tombol Close (X) di dalam dialog
+              if (await feedbackPopup.isVisible().catch(() => false)) {
+                const dialog = this.page.locator('[role="dialog"]').first();
+                const closeBtn = dialog
+                  .locator(
+                    'button[aria-label="Close"], button[aria-label="Fermer"], button[title="Close"], button[aria-label*="Tutup" i]'
+                  )
+                  .first();
+                if (await closeBtn.isVisible().catch(() => false)) {
+                  await closeBtn.click({ force: true }).catch(() => {});
+                  console.log('[INFO] MFA Feedback popup closed via X button.');
+                } else {
+                  console.warn('[WARN] Could not find Close button for MFA Feedback popup.');
+                }
+              }
+            }
             continue;
           }
 
