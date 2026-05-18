@@ -536,8 +536,13 @@ class TeamsBot {
         '--disable-popup-blocking',
         '--disable-prompt-on-repost',
         '--no-default-browser-check',
-        '--disable-renderer-backgrounding', // ← TAMBAH: kurangi CPU saat tab background
-        '--disable-ipc-flooding-protection', // ← TAMBAH: kurangi throttling IPC
+        '--disable-renderer-backgrounding',
+        '--disable-ipc-flooding-protection',
+        '--disable-javascript-harmony-shipping',
+        '--blink-settings=imagesEnabled=false',
+        '--disable-partial-raster',
+        '--disable-skia-runtime-opts',
+        '--enable-low-end-device-mode',
       ],
     });
     this.context = await this.browser.newContext();
@@ -545,9 +550,20 @@ class TeamsBot {
     const pages = this.context.pages();
     this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
 
-    // ✅ FIX: Route blocking di PAGE level, bukan context
-    // Ini jauh lebih ringan — hanya intercept halaman utama
     await this._applyRouteBlocking(this.page);
+
+    await this.page.addInitScript(() => {
+      const style = document.createElement('style');
+      style.textContent = `
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+      }
+    `;
+      document.addEventListener('DOMContentLoaded', () => {
+        document.head?.appendChild(style);
+      });
+    });
   }
 
   // Fungsi baru — pisah dari connect() agar bisa dipanggil ulang di newPage
