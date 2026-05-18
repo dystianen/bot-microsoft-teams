@@ -17,7 +17,7 @@ services:
       - SYS_ADMIN
 
     environment:
-      - DISPLAY=:20
+      - DISPLAY=:21
       - QT_X11_NO_MITSHM=1
 
     volumes:
